@@ -11,6 +11,7 @@ import { countAvailable, importPath, scanClaudeCode } from './connectors/index.t
 import { estimateCost } from './cost.ts'
 import { distill, renderConversation } from './distill.ts'
 import { gate } from './gate.ts'
+import { localExtract } from './localExtract.ts'
 import { formatHits, RecallIndex } from './recall.ts'
 import { MemoryStore } from './store.ts'
 import type {
@@ -222,6 +223,25 @@ export function apply(ctx: HostContext, config: PorterConfig = {}): void {
       }
 
       if (req.method === 'POST') {
+        /**
+         * 本地规则抽取：**不花钱、不联网、不用模型**。
+         *
+         * 这是第一屏该点的按钮——先让用户看见自己说过的话，再决定要不要花钱
+         * 做完整提纯。宿主没挂 llm 时它也照常工作。
+         */
+        if (pathname === '/memory-porter/api/local-scan') {
+          const body = (await readBody(req)) as { path?: unknown; limit?: unknown }
+          const conversations = await collectConversations(body)
+          const { candidates, scanned } = localExtract(conversations)
+          const ingested = await ingest(candidates, false)
+          sendJson(res, 200, {
+            conversations: conversations.length,
+            userTurns: scanned,
+            found: candidates.length,
+            ingested,
+          })
+          return
+        }
         // 扫描本机 Claude Code（免导出）。
         if (pathname === '/memory-porter/api/scan') {
           const body = (await readBody(req)) as { limit?: number }
@@ -353,6 +373,41 @@ export function apply(ctx: HostContext, config: PorterConfig = {}): void {
     }),
     'memory-porter: api route',
   )
+
+  /**
+   * 告诉模型「回答既往决策 / 偏好前先查记忆库」。
+   *
+   * 不接这条接缝，前面所有工作都不兑现：工具注册了，但模型不知道该主动用它，
+   * 用户搬完家回到对话里问一句过去的事，模型照样凭空答。
+   *
+   * `@deepseek-ai/dsh-system-prompt` 是 dsh-base 的基础件，每个 profile 都有，
+   * **用户不需要额外安装任何东西**。
+   *
+   * text 用 provider 形态：这段话每次组装时求值，库里没东西就返回空串——
+   * 空库还占着系统提示词的位置是纯浪费 token。
+   */
+  ctx.inject(['systemPrompt'], promptCtx => {
+    const systemPrompt = promptCtx.get<{
+      section(section: { name: string; order: number; text: string | (() => string) }): () => void
+    }>('systemPrompt')
+    if (systemPrompt === undefined) return
+    promptCtx.effect(
+      () => systemPrompt.section({
+        name: 'memory-porter',
+        // 100–199 是工具指引的惯例区间。
+        order: 150,
+        text: () => {
+          const count = store.summary().memories
+          if (count === 0) return ''
+          return `用户有一座本地记忆库（${count} 条），由「记忆搬家」从他在 Claude / ChatGPT 里的历史对话中搬来，每条都带他本人的逐字原话。\n`
+            + '回答涉及他的既定决策、偏好、业务背景或过往结论之前，先用 recall_memory 查一次，并以召回的逐字证据为准；'
+            + '标着「待核」的条目尚未经他确认，可以参考但不能当成既定事实。查不到就直说查不到，不要臆断。'
+        },
+      }),
+      'memory-porter: system prompt section',
+    )
+    promptCtx.logger.info('memory-porter: 主动召回指令已接入系统提示词')
+  })
 
   // 把 recall_memory 注册成原生工具，模型可以直接调用。
   // 用 ctx.inject 等 tools 就绪：宿主没挂 tools 时这段永远不跑，插件本身照常激活

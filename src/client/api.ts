@@ -84,6 +84,12 @@ export const api = {
   available: () => call<Available>('available'),
   queue: () => call<{ queue: MemoryView[] }>('queue'),
   memories: () => call<{ memories: MemoryView[] }>('memories'),
+  localScan: () => call<{
+    conversations: number
+    userTurns: number
+    found: number
+    ingested: { accepted: number; pending: number; skipped: number }
+  }>('local-scan', {}),
   models: () => call<{
     models: ModelChoice[]
     current?: { provider: string; model: string; source: string }

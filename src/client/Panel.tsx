@@ -87,8 +87,9 @@ function PortTab({
     { conversations: number; estimate: Estimate; modelSource: string } | undefined
   >()
   const [report, setReport] = useState<DistillReport | undefined>()
-  const [busy, setBusy] = useState<'' | 'estimate' | 'distill'>('')
+  const [busy, setBusy] = useState<'' | 'local' | 'estimate' | 'distill'>('')
   const [error, setError] = useState<string | undefined>()
+  const [local, setLocal] = useState<{ userTurns: number; found: number } | undefined>()
   const [models, setModels] = useState<ModelChoice[]>([])
   /** 空串 = 跟随宿主默认；否则是 "provider::model"。 */
   const [pick, setPick] = useState('')
@@ -109,11 +110,15 @@ function PortTab({
     return provider !== undefined && model !== undefined ? { provider, model } : undefined
   }
 
-  const run = async (kind: 'estimate' | 'distill'): Promise<void> => {
+  const run = async (kind: 'local' | 'estimate' | 'distill'): Promise<void> => {
     setBusy(kind)
     setError(undefined)
     try {
-      if (kind === 'estimate') setEstimate(await api.estimate(picked()))
+      if (kind === 'local') {
+        const result = await api.localScan()
+        setLocal(result)
+        onDone()
+      } else if (kind === 'estimate') setEstimate(await api.estimate(picked()))
       else {
         setReport(await api.distill(picked()))
         onDone()
@@ -173,6 +178,24 @@ function PortTab({
         想更保守就切「逐条确认」。
       </div>
 
+      {/* 第一步永远是免费的那个：先让人看见自己说过的话，再谈花钱。 */}
+      <div className="mp-note" style={{ marginTop: 14 }}>
+        <b>先免费看一眼</b> —— 不用模型、不联网、不花一分钱，
+        直接从你本机的对话里把<b>你自己下过判断的原话</b>挑出来。
+      </div>
+      <div className="mp-actions">
+        <button className="mp-btn" disabled={busy !== ''} onClick={() => void run('local')}>
+          {busy === 'local' ? '扫描中…' : '🎁 本地扫描（免费·瞬时）'}
+        </button>
+      </div>
+      {local !== undefined && (
+        <div className="mp-note">
+          扫了你 <b>{local.userTurns}</b> 条发言，挑出 <b>{local.found}</b> 句你自己下过的判断
+          —— 全部在「待确认」页等你过目。
+          {local.found === 0 && ' 没匹配到显式的决断句式，用下面的模型提纯能挖得更深。'}
+        </div>
+      )}
+
       {/* 用哪个模型 = 花多少钱，所以选择器就摆在算钱按钮旁边。 */}
       <div className="mp-actions">
         <label className="mp-field">
@@ -188,6 +211,8 @@ function PortTab({
         </label>
       </div>
       <div className="mp-note">
+        <b>想挖得更深？</b>用模型完整提纯一遍——它能抓到规则抓不到的隐含结论，
+        代价是<b>会把对话原文发给你在 DSH 里配的模型服务商</b>，并按用量收费。
         搬家是批量作业，<b>和你聊天用的模型可以不一样</b>——会话里临时切的模型不影响这里。
         v4-flash 的输出价只有 v4-pro 的三分之一，批量搬历史通常用 flash 就够。
         {models.length === 0 && ' （当前列不出可选模型，会用宿主默认那个。）'}
