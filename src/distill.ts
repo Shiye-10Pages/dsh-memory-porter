@@ -8,7 +8,7 @@
  *    由代码核对，不信模型的自述。核不上就丢掉。这是硬防幻觉的那道闸，
  *    也是"带逐字证据"这句宣传语唯一站得住的理由。
  */
-import type { Candidate, LlmSlice, MemoryType, RawConversation, SourcePointer } from './types.ts'
+import type { Candidate, LlmStreamSlice, MemoryType, RawConversation, SourcePointer } from './types.ts'
 
 /** 保真契约 v1 只认这 9 类。 */
 const MEMORY_TYPES: readonly MemoryType[] = [
@@ -191,7 +191,7 @@ async function mapLimit<T, R>(items: readonly T[], limit: number, fn: (item: T) 
 }
 
 export interface DistillOptions {
-  llm: LlmSlice
+  llm: LlmStreamSlice
   provider: string
   model: string
   signal?: AbortSignal

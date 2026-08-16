@@ -71,6 +71,9 @@ export const css = `
 .mp-meta{margin-top:7px;font-size:11px;color:var(--dsw-alias-label-tertiary,#8f959e);font-variant-numeric:tabular-nums}
 .mp-item-actions{display:flex;gap:8px;margin-top:10px}
 
+.mp-field{display:flex;align-items:center;gap:8px;flex:1;min-width:220px}
+.mp-field-label{font-size:12px;font-weight:600;color:var(--dsw-alias-label-secondary,#51565d);white-space:nowrap}
+
 .mp-search{display:flex;gap:8px;margin-bottom:4px}
 .mp-input{flex:1;min-width:0;border:1px solid var(--dsw-alias-border-l1,#e3e6eb);border-radius:8px;padding:7px 11px;font-size:13px;background:var(--dsw-alias-bg-base,#fff);color:inherit}
 .mp-empty{padding:34px 10px;text-align:center;font-size:13px;color:var(--dsw-alias-label-tertiary,#8f959e);line-height:1.8}

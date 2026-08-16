@@ -6,7 +6,14 @@
  * 用户要能一眼看出"哪些自动进了库、为什么"，然后自己决定松紧。
  */
 import { useCallback, useEffect, useState } from 'react'
-import { api, type Available, type DistillReport, type Estimate, type MemoryView } from './api.ts'
+import {
+  api,
+  type Available,
+  type DistillReport,
+  type Estimate,
+  type MemoryView,
+  type ModelChoice,
+} from './api.ts'
 
 type Tab = 'port' | 'pending' | 'library'
 
@@ -76,18 +83,39 @@ function PortTab({
   onMode: (mode: string) => void
   onDone: () => void
 }): React.JSX.Element {
-  const [estimate, setEstimate] = useState<{ conversations: number; estimate: Estimate } | undefined>()
+  const [estimate, setEstimate] = useState<
+    { conversations: number; estimate: Estimate; modelSource: string } | undefined
+  >()
   const [report, setReport] = useState<DistillReport | undefined>()
   const [busy, setBusy] = useState<'' | 'estimate' | 'distill'>('')
   const [error, setError] = useState<string | undefined>()
+  const [models, setModels] = useState<ModelChoice[]>([])
+  /** 空串 = 跟随宿主默认；否则是 "provider::model"。 */
+  const [pick, setPick] = useState('')
+  const [defaultLabel, setDefaultLabel] = useState('dsh 默认模型')
+
+  useEffect(() => {
+    void api.models()
+      .then(data => {
+        setModels(data.models)
+        if (data.current !== undefined) setDefaultLabel(`${data.current.model}（${data.current.source}）`)
+      })
+      .catch(() => undefined)
+  }, [])
+
+  const picked = (): { provider: string; model: string } | undefined => {
+    if (pick === '') return undefined
+    const [provider, model] = pick.split('::')
+    return provider !== undefined && model !== undefined ? { provider, model } : undefined
+  }
 
   const run = async (kind: 'estimate' | 'distill'): Promise<void> => {
     setBusy(kind)
     setError(undefined)
     try {
-      if (kind === 'estimate') setEstimate(await api.estimate())
+      if (kind === 'estimate') setEstimate(await api.estimate(picked()))
       else {
-        setReport(await api.distill())
+        setReport(await api.distill(picked()))
         onDone()
       }
     } catch (caught) {
@@ -95,6 +123,12 @@ function PortTab({
     } finally {
       setBusy('')
     }
+  }
+
+  // 换模型 = 换价格，旧的预估立刻作废，别让用户拿着 flash 的报价点了 pro 的按钮。
+  const changeModel = (value: string): void => {
+    setPick(value)
+    setEstimate(undefined)
   }
 
   const count = available?.claudeCode ?? 0
@@ -139,6 +173,26 @@ function PortTab({
         想更保守就切「逐条确认」。
       </div>
 
+      {/* 用哪个模型 = 花多少钱，所以选择器就摆在算钱按钮旁边。 */}
+      <div className="mp-actions">
+        <label className="mp-field">
+          <span className="mp-field-label">提纯用</span>
+          <select className="mp-input" value={pick} onChange={event => changeModel(event.target.value)}>
+            <option value="">跟随 {defaultLabel}</option>
+            {models.map(model => (
+              <option key={`${model.provider}::${model.id}`} value={`${model.provider}::${model.id}`}>
+                {model.name}（{model.provider}）
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <div className="mp-note">
+        搬家是批量作业，<b>和你聊天用的模型可以不一样</b>——会话里临时切的模型不影响这里。
+        v4-flash 的输出价只有 v4-pro 的三分之一，批量搬历史通常用 flash 就够。
+        {models.length === 0 && ' （当前列不出可选模型，会用宿主默认那个。）'}
+      </div>
+
       <div className="mp-actions">
         <button className="mp-btn ghost" disabled={busy !== ''} onClick={() => void run('estimate')}>
           {busy === 'estimate' ? '算账中…' : '① 先算算要花多少钱'}
@@ -151,6 +205,7 @@ function PortTab({
       {estimate !== undefined && (
         <div className="mp-alert">
           {estimate.conversations} 个会话 · 约 {estimate.estimate.inputTokens.toLocaleString()} tokens ·
+          用 <b>{estimate.estimate.model}</b>（{estimate.modelSource}）
           现在跑 <b>¥{estimate.estimate.cny}</b>
           {estimate.estimate.repriced && estimate.estimate.peak
             && `（高峰时段；等空闲时段跑约 ¥${estimate.estimate.offPeakCny}）`}
@@ -160,7 +215,8 @@ function PortTab({
 
       {report !== undefined && (
         <div className="mp-note">
-          搬完了：从 <b>{report.conversations}</b> 个会话提炼出 <b>{report.candidates}</b> 条候选，
+          搬完了（用的 <b>{report.model}</b>）：从 <b>{report.conversations}</b> 个会话提炼出{' '}
+          <b>{report.candidates}</b> 条候选，
           自动入库 <b>{report.ingested?.accepted ?? 0}</b> 条、
           待你确认 <b>{report.ingested?.pending ?? 0}</b> 条。
           {report.rejectedNotVerbatim > 0 && (

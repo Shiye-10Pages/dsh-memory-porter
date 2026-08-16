@@ -40,12 +40,20 @@ export interface Estimate {
   repriced: boolean
 }
 
+export interface ModelChoice {
+  provider: string
+  id: string
+  name: string
+}
+
 export interface DistillReport {
   conversations: number
   candidates: number
   rejectedNotVerbatim: number
   usage: { inputTokens: number; outputTokens: number }
   errors: { uri: string; message: string }[]
+  model?: string
+  modelSource?: string
   ingested?: {
     accepted: number
     pending: number
@@ -76,8 +84,17 @@ export const api = {
   available: () => call<Available>('available'),
   queue: () => call<{ queue: MemoryView[] }>('queue'),
   memories: () => call<{ memories: MemoryView[] }>('memories'),
-  estimate: (limit?: number) => call<{ conversations: number; estimate: Estimate }>('estimate', { limit }),
-  distill: (limit?: number) => call<DistillReport>('distill', { limit, confirm: true }),
+  models: () => call<{
+    models: ModelChoice[]
+    current?: { provider: string; model: string; source: string }
+  }>('models'),
+  estimate: (pick?: { provider: string; model: string }) =>
+    call<{ conversations: number; estimate: Estimate; provider: string; modelSource: string }>(
+      'estimate',
+      { ...pick },
+    ),
+  distill: (pick?: { provider: string; model: string }) =>
+    call<DistillReport>('distill', { ...pick, confirm: true }),
   importPath: (path: string) => call<unknown>('import', { path }),
   decide: (id: string, decision: 'approved' | 'discarded') => call<Available>('decide', { id, decision }),
   recall: (query: string, topk = 6) =>

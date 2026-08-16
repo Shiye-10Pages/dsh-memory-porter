@@ -140,7 +140,7 @@ export type GateReason =
  * dsh-whale-meter 同一策略：插件零运行时依赖，就不会被上游 rc 版本的
  * 类型变动波及；真出问题也只坏在这一层，好定位。
  */
-export interface LlmSlice {
+export interface LlmStreamSlice {
   stream(options: {
     provider: string
     model: string
@@ -150,6 +150,19 @@ export interface LlmSlice {
     maxTokens?: number
     signal?: AbortSignal
   }): AsyncIterable<LlmStreamChunk>
+}
+
+/**
+ * 完整的 llm 切面 = 流式调用 + 模型发现。
+ *
+ * 拆成两个是有意的：提纯只需要 `stream`，不该因为多了两个发现方法而被迫依赖它们
+ * （测试里的假 llm 也就不用凭空实现两个用不到的函数）。
+ */
+export interface LlmSlice extends LlmStreamSlice {
+  /** 已注册的 provider 路由，供面板列选项。 */
+  listProviders(): { id: string; name: string }[]
+  /** 某个 provider 当前对外提供的模型。可能走网络发现，调用方要容错。 */
+  listModels(provider: string): Promise<{ provider: string; id: string; name: string; description?: string }[]>
 }
 
 /** 我们只关心文本增量与用量两种 chunk，其余（reasoning/tool-call）一律忽略。 */
@@ -228,6 +241,14 @@ export interface PorterConfig {
   dataDir?: string
   /** 人工闸松紧档，默认 balanced。面板可实时切换，见 ReviewMode。 */
   reviewMode?: ReviewMode
+  /**
+   * 提纯专用模型。不填则跟随宿主的默认模型（`agentDefaultModel`）。
+   *
+   * 单独开这个口子是因为**聊天和搬家该用不同的模型**：聊天可能用 v4-pro，
+   * 但搬家是批量作业，flash 的输出价只有 pro 的三分之一，100 个会话能差几十块。
+   * 会话里临时切的模型不影响这里——那是 entry point 的事，插件拿不到也不该拿。
+   */
+  distillModel?: { provider: string; model: string }
 }
 
 /**

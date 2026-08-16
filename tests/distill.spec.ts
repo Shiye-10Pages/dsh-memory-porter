@@ -14,7 +14,7 @@ import {
   toCandidate,
 } from '../src/distill.ts'
 import { estimateCost, estimateTokens, isPeak, ratesFor, REPRICE_EFFECTIVE_MS } from '../src/cost.ts'
-import type { LlmSlice, RawConversation, SourcePointer } from '../src/types.ts'
+import type { LlmStreamSlice, RawConversation, SourcePointer } from '../src/types.ts'
 
 const SOURCE: SourcePointer = { source: 'claude-code', convId: 'C1' }
 
@@ -28,7 +28,7 @@ function conversation(texts: string[]): RawConversation {
 }
 
 /** 造一个按脚本回话的假 llm。 */
-function fakeLlm(replies: string[], onCall?: () => void): LlmSlice {
+function fakeLlm(replies: string[], onCall?: () => void): LlmStreamSlice {
   let index = 0
   return {
     stream() {
@@ -179,7 +179,7 @@ describe('提纯流程', () => {
     const good = conversation(['我决定这个插件用 MIT 协议发布。'])
     const bad = { ...conversation(['另一段对话内容在这里。']), convId: 'C2', uri: '/tmp/c2.jsonl' }
     let call = 0
-    const llm: LlmSlice = {
+    const llm: LlmStreamSlice = {
       stream() {
         call++
         if (call === 2) throw new Error('网络抖了一下')

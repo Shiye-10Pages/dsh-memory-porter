@@ -130,14 +130,48 @@ export function apply(ctx: HostContext, config: PorterConfig = {}): void {
    * 拿不到就说明这套 dsh 没挂 llm 或默认模型服务——如实回错，
    * 不去猜一个模型名替用户花钱。
    */
-  function resolveModel(): { provider: string; model: string; llm: LlmSlice } | { error: string } {
+  /**
+   * 定下这次提纯用哪个模型。优先级由近及远：
+   * 面板这次选的 → `config.distillModel` → 宿主默认模型。
+   *
+   * 拿不到就如实报错，绝不猜一个模型名替用户花钱。
+   */
+  function resolveModel(
+    override?: { provider?: unknown; model?: unknown },
+  ): { provider: string; model: string; source: string; llm: LlmSlice } | { error: string } {
     const llm = ctx.get<LlmSlice>('llm')
     if (llm === undefined) return { error: '当前 dsh 没有挂载 llm 服务，无法提纯' }
+
+    if (typeof override?.provider === 'string' && typeof override?.model === 'string'
+      && override.provider !== '' && override.model !== '') {
+      return { provider: override.provider, model: override.model, source: '本次选择', llm }
+    }
+    const configured = config.distillModel
+    if (configured !== undefined && configured.provider !== '' && configured.model !== '') {
+      return { ...configured, source: 'cordis.yml 的 distillModel', llm }
+    }
     const selection = ctx.get<DefaultModelSlice>('agentDefaultModel')?.currentSelection()
     if (selection === undefined || selection.provider === '' || selection.model === '') {
-      return { error: '读不到 dsh 的默认模型，请先在设置里选一个模型' }
+      return { error: '读不到 dsh 的默认模型，请先在设置里选一个模型，或在面板上直接选一个' }
     }
-    return { provider: selection.provider, model: selection.model, llm }
+    return { provider: selection.provider, model: selection.model, source: 'dsh 默认模型', llm }
+  }
+
+  /** 列出可选模型，供面板画选择器。发现失败的 provider 只跳过，不拖垮整张列表。 */
+  async function listModels(): Promise<{ provider: string; id: string; name: string }[]> {
+    const llm = ctx.get<LlmSlice>('llm')
+    if (llm === undefined) return []
+    const out: { provider: string; id: string; name: string }[] = []
+    for (const provider of llm.listProviders()) {
+      try {
+        for (const model of await llm.listModels(provider.id)) {
+          out.push({ provider: provider.id, id: model.id, name: model.name || model.id })
+        }
+      } catch (error) {
+        ctx.logger.warn(`memory-porter: 列举 ${provider.id} 的模型失败：${String(error)}`)
+      }
+    }
+    return out
   }
 
   async function handler(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -153,6 +187,17 @@ export function apply(ctx: HostContext, config: PorterConfig = {}): void {
         }
         if (pathname === '/memory-porter/api/queue') {
           sendJson(res, 200, { queue: store.queue() }, headOnly)
+          return
+        }
+        // 可选模型清单 + 当前会用哪个、为什么是它，供面板画选择器。
+        if (pathname === '/memory-porter/api/models') {
+          const resolved = resolveModel()
+          sendJson(res, 200, {
+            models: await listModels(),
+            current: 'error' in resolved
+              ? undefined
+              : { provider: resolved.provider, model: resolved.model, source: resolved.source },
+          }, headOnly)
           return
         }
         if (pathname === '/memory-porter/api/memories') {
@@ -210,8 +255,9 @@ export function apply(ctx: HostContext, config: PorterConfig = {}): void {
         }
         // 开跑前的预估：花多少钱、现在跑还是等空闲时段跑。
         if (pathname === '/memory-porter/api/estimate') {
-          const body = (await readBody(req)) as { path?: unknown; limit?: unknown }
-          const resolved = resolveModel()
+          const body = (await readBody(req)) as
+            { path?: unknown; limit?: unknown; provider?: unknown; model?: unknown }
+          const resolved = resolveModel(body)
           if ('error' in resolved) {
             sendJson(res, 409, { error: resolved.error })
             return
@@ -221,17 +267,21 @@ export function apply(ctx: HostContext, config: PorterConfig = {}): void {
           sendJson(res, 200, {
             conversations: conversations.length,
             estimate: estimateCost(texts, resolved.model, Date.now()),
+            provider: resolved.provider,
+            // 模型是哪来的，明说 —— 花钱的决定不该靠猜。
+            modelSource: resolved.source,
           })
           return
         }
         // 真花钱的那一步：用户在面板上看过预估、点了确认才会走到这里。
         if (pathname === '/memory-porter/api/distill') {
-          const body = (await readBody(req)) as { path?: unknown; limit?: unknown; confirm?: unknown }
+          const body = (await readBody(req)) as
+            { path?: unknown; limit?: unknown; confirm?: unknown; provider?: unknown; model?: unknown }
           if (body?.confirm !== true) {
             sendJson(res, 400, { error: '缺少 confirm —— 提纯要花钱，必须先看预估再确认' })
             return
           }
-          const resolved = resolveModel()
+          const resolved = resolveModel(body)
           if ('error' in resolved) {
             sendJson(res, 409, { error: resolved.error })
             return
@@ -250,6 +300,8 @@ export function apply(ctx: HostContext, config: PorterConfig = {}): void {
             usage: result.usage,
             errors: result.errors,
             ingested,
+            model: resolved.model,
+            modelSource: resolved.source,
           })
           return
         }
