@@ -146,6 +146,29 @@ export function isHighImpact(candidate: Candidate): boolean {
   return false
 }
 
+/** 一条结论最多挂几条冲突链。人一次看 3 条还能判，看 19 条只会关掉面板。 */
+export const MAX_CONFLICT_LINKS = 3
+
+/** 参与矛盾判定的 claim 长度上限——超过这个长度的不是"结论"，是文档。 */
+const CONFLICT_CLAIM_MAX = 80
+
+/**
+ * 这一对够不够格进矛盾判定。
+ *
+ * 两条硬门槛，都是真实导出打出来的：
+ *
+ * 1. **`claude-memory` 一概不参与。** 它是 Claude 在某一刻对你的整份记忆快照，
+ *    条目之间按构造就不互相矛盾——拿它们两两比，只会得到一堆假冲突
+ *    （20 条候选一度互判出 190 对）。矛盾闸比的是**你在不同时间下的结论**。
+ * 2. **过长的 claim 不参与。** 二元组重叠系数在长文本上会饱和：短文档的词
+ *    几乎全被长文档包含，分母取小的那个，于是无脑逼近 1。它是为短结论标定的，
+ *    就只用在短结论上。
+ */
+export function eligibleForConflict(source: SourceKind, a: string, b: string): boolean {
+  if (source === 'claude-memory') return false
+  return [...a].length <= CONFLICT_CLAIM_MAX && [...b].length <= CONFLICT_CLAIM_MAX
+}
+
 /** 溯源闸：无逐字证据或无来源指针 → 拒收。 */
 export function passesProvenance(candidate: Candidate): boolean {
   if (candidate.claim.trim() === '' || candidate.evidence.trim() === '') return false
@@ -260,6 +283,7 @@ export function gate(candidates: readonly Candidate[], options: GateOptions = {}
         break
       }
       // ③ 矛盾闸：同主题但结论不同 —— 两条都留、互链，**不替用户判谁对**。
+      if (!eligibleForConflict(candidate.source.source, candidate.claim, item.claim)) continue
       const overlap = topicOverlap(candidate.claim, item.claim)
       if (overlap >= NEAR_LO) {
         result.nearPairs.push({ a: id, b: item.id, score: Number(overlap.toFixed(3)) })
@@ -268,7 +292,12 @@ export function gate(candidates: readonly Candidate[], options: GateOptions = {}
     if (mergedIntoExisting) continue
 
     const score = confidence(candidate.source.source, sources.length, byLlm)
-    const linked = result.nearPairs.filter(pair => pair.a === id).map(pair => pair.b)
+    // 只留相关度最高的几条：19 条冲突链没人看得下去，等于没有。
+    const linked = result.nearPairs
+      .filter(pair => pair.a === id)
+      .sort((x, y) => y.score - x.score)
+      .slice(0, MAX_CONFLICT_LINKS)
+      .map(pair => pair.b)
     const reason = decideGate({ candidate, confidence: score, hasConflict: linked.length > 0, mode })
     const item: MemoryItem = {
       id,

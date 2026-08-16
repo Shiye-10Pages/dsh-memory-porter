@@ -13,6 +13,26 @@
  */
 import type { Candidate, SourcePointer } from '../types.ts'
 
+/** claim 的长度上限——超出就截断，队列里要一眼能扫。 */
+const CLAIM_CHARS = 60
+
+/**
+ * 从正文里取一句能当结论看的话，拼成 `标题 · 首句`。
+ *
+ * 不这么做的话 claim 就是「Claude 记忆 · Work context」这种模板串：
+ * 对用户毫无信息量（他得点开才知道里面是啥），对去重/矛盾闸更是灾难——
+ * 共享前缀会让所有条目互相判成同主题（真实导出上出现过 20 条互判 169 对）。
+ */
+function claimOf(title: string, body: string): string {
+  const first = body
+    .split('\n')
+    .map(line => line.replace(/^[-*>#\s]+/, '').trim())
+    .find(line => line !== '')
+  const summary = first === undefined ? '' : first.split(/[。.!?！？]/)[0]?.trim() ?? ''
+  const merged = summary === '' ? title : `${title} · ${summary}`
+  return [...merged].length > CLAIM_CHARS ? `${[...merged].slice(0, CLAIM_CHARS).join('')}…` : merged
+}
+
 /** 按顶层 `**标题**` 行切分正文 → [标题, 正文]。 */
 export function splitSections(text: string): { title: string; body: string }[] {
   const out: { title: string; body: string }[] = []
@@ -53,7 +73,7 @@ export function parseClaudeMemories(data: unknown, uri = 'memories.json'): Candi
   for (const { title, body } of splitSections(String(m.conversations_memory ?? ''))) {
     out.push({
       type: '认知',
-      claim: `Claude 记忆 · ${title}`,
+      claim: claimOf(`Claude 记忆 · ${title}`, body),
       evidence: body,
       context: 'claude.ai 云端记忆 · conversations_memory',
       source: source(`conv:${title}`),
@@ -68,7 +88,7 @@ export function parseClaudeMemories(data: unknown, uri = 'memories.json'): Candi
       if (typeof value !== 'string' || value.trim() === '') continue
       out.push({
         type: '认知',
-        claim: `Claude 项目记忆 · ${key.slice(0, 8)}`,
+        claim: claimOf(`Claude 项目记忆 · ${key.slice(0, 8)}`, value.trim()),
         evidence: value.trim(),
         context: 'claude.ai 云端记忆 · project_memories',
         source: source(`proj:${key}`),
@@ -85,7 +105,7 @@ export function parseClaudeMemories(data: unknown, uri = 'memories.json'): Candi
       if (content === '') continue
       out.push({
         type: '认知',
-        claim: `Claude 记忆文件 · ${path === '' ? '(未命名)' : path}`,
+        claim: claimOf(`Claude 记忆文件 · ${path === '' ? '(未命名)' : path}`, content),
         evidence: content,
         context: `claude.ai 云端记忆 · memory_files${path === '' ? '' : ` · ${path}`}`,
         source: source(`file:${path}`),

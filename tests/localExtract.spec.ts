@@ -5,7 +5,7 @@
  * 它是用户装完插件看到的第一屏，噪声大比什么都不显示更糟。
  */
 import { describe, expect, it } from 'vitest'
-import { classify, localExtract, looksLikePaste, sentences } from '../src/localExtract.ts'
+import { classify, localExtract, looksLikePaste, sentences, typedPart } from '../src/localExtract.ts'
 import type { RawConversation } from '../src/types.ts'
 
 function conv(texts: { role: 'user' | 'assistant'; text: string }[]): RawConversation {
@@ -75,6 +75,35 @@ describe('判定', () => {
 
   it('带字面转义符的是数据不是发言', () => {
     expect(classify('\\n - openingStyle 改为用一个具体钩子开场')).toBeUndefined()
+  })
+})
+
+describe('上传附件不算他说的话', () => {
+  it('切在标记处，只留他自己敲的部分', () => {
+    expect(typedPart('看看这份稿子\n\n[上传附件正文]\n这类稿子要改成先展示结果'))
+      .toBe('看看这份稿子\n\n')
+  })
+
+  it('没有附件时原样返回', () => {
+    expect(typedPart('我决定用 MIT 协议')).toBe('我决定用 MIT 协议')
+  })
+
+  /** 真实 Claude 导出上栽过：挑出的 6 句里 4 句出自两个上传附件。 */
+  it('附件里的决断句不被当成他的判断', () => {
+    const { candidates } = localExtract([conv([{
+      role: 'user',
+      text: '帮我看看\n\n[上传附件正文]\n这类稿子要改成"先展示结果，再讲过程"。以后都不要用纯判断做入口。',
+    }])])
+    expect(candidates).toHaveLength(0)
+  })
+
+  it('他自己的话留下，附件里的切掉', () => {
+    const { candidates } = localExtract([conv([{
+      role: 'user',
+      text: '我决定这个插件用 MIT 协议发布。\n\n[上传附件正文]\n以后都不要在发版当天改价目表。',
+    }])])
+    expect(candidates).toHaveLength(1)
+    expect(candidates[0]?.evidence).toContain('MIT')
   })
 })
 

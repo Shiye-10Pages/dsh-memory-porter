@@ -59,6 +59,21 @@ const MIN_CHARS = 8
 const MAX_CHARS = 120
 
 /**
+ * 连接器把上传附件的正文拼在这个标记之后（见 claude-web.ts）。
+ *
+ * 那部分对 LLM 提纯有价值（是他当时喂进去的资料），但**对规则抽取必须切掉**——
+ * 这一层承诺的是"你自己说过的话"，附件是别人写的、或 AI 生成的文档。
+ * 真实导出上就栽在这里：挑出来的 6 句里有 4 句出自两个附件。
+ */
+const ATTACHMENT_MARKER = '[上传附件正文]'
+
+/** 只保留他自己敲进输入框的那部分。 */
+export function typedPart(text: string): string {
+  const at = text.indexOf(ATTACHMENT_MARKER)
+  return at === -1 ? text : text.slice(0, at)
+}
+
+/**
  * 切句。中英标点都切，并且**先剥掉代码块**——
  * Claude Code 的 transcript 里大半是代码，代码里的「必须」「一律」不是人的判断。
  */
@@ -132,9 +147,11 @@ export function localExtract(
     for (const turn of conversation.turns) {
       if (turn.role !== 'user') continue
       scanned++
-      // 整段贴进来的文档先整条否掉——真实数据上这是最大的噪声源。
-      if (looksLikePaste(turn.text)) continue
-      for (const sentence of sentences(turn.text)) {
+      // 先切掉上传附件正文，只留他自己敲的那部分。
+      const typed = typedPart(turn.text)
+      // 整段贴进来的文档再整条否掉——这两条是同一个病根的两种形态。
+      if (looksLikePaste(typed)) continue
+      for (const sentence of sentences(typed)) {
         if (candidates.length >= limit) return { candidates, scanned }
         const type = classify(sentence)
         if (type === undefined) continue
