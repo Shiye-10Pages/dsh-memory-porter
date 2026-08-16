@@ -7,6 +7,7 @@
  * M6 会把面板三页（搬家 / 待确认 / 记忆库）挂到这里；现在先把接线跑通。
  */
 import { PorterAction } from './PorterAction.tsx'
+import { SidebarEntry } from './SidebarEntry.tsx'
 import { injectStyles } from './styles.ts'
 import { NS, en, zh } from './locales.ts'
 
@@ -38,6 +39,20 @@ export function apply(ctx: ClientLikeContext): void {
     ctx.logger?.warn(`memory-porter: locale register failed: ${String(error)}`)
   }
 
+  // 侧边栏底部入口：**始终可见**，不需要先开会话。
+  // 搬家是装完插件的第一个动作，那时用户还停在首页——主入口必须在这里。
+  try {
+    ctx.slots?.inject('sidebar.footer.action', () => ctx.slots!.register({
+      name: 'sidebar.footer.action',
+      id: 'memory-porter',
+      order: 20,
+      locale: NS,
+    }, SidebarEntry))
+  } catch (error) {
+    ctx.logger?.warn(`memory-porter: sidebar slot register failed: ${String(error)}`)
+  }
+
+  // 会话头部的小徽章：搬完之后在对话里随手看一眼记忆库，是次要入口。
   try {
     ctx.slots?.inject('conversation.session.header.actions', () => ctx.slots!.register({
       name: 'conversation.session.header.actions',
@@ -46,6 +61,6 @@ export function apply(ctx: ClientLikeContext): void {
       locale: NS,
     }, PorterAction))
   } catch (error) {
-    ctx.logger?.warn(`memory-porter: slot register failed: ${String(error)}`)
+    ctx.logger?.warn(`memory-porter: header slot register failed: ${String(error)}`)
   }
 }

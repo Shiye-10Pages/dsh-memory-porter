@@ -11,6 +11,13 @@ export const css = `
 .mp-chip:hover{background:var(--dsw-alias-interactive-bg-hover,#f2f4f7);border-color:var(--dsw-alias-state-business-primary,#3370ff)}
 .mp-chip-dot{width:6px;height:6px;border-radius:999px;background:#e8882a}
 
+/* 侧边栏底部入口：跟「设置」那一排对齐，收起时只剩图标。 */
+.mp-side{display:flex;align-items:center;gap:9px;width:100%;padding:7px 9px;border:0;border-radius:8px;background:none;color:var(--dsw-alias-label-secondary,#51565d);font-size:13px;cursor:pointer;text-align:left}
+.mp-side:hover{background:var(--dsw-alias-interactive-bg-hover,#f2f4f7);color:var(--dsw-alias-label-primary,#1f2329)}
+.mp-side-icon{font-size:15px;line-height:1;flex:none}
+.mp-side-label{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mp-side-count{font-size:11px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-tertiary,#8f959e)}
+
 .mp-overlay{position:fixed;inset:0;z-index:10000;display:flex;align-items:flex-start;justify-content:center;padding:6vh 16px 16px;background:rgba(15,18,25,.45);backdrop-filter:blur(2px)}
 .mp-panel{width:min(820px,100%);max-height:88vh;display:flex;flex-direction:column;border-radius:16px;border:1px solid var(--dsw-alias-border-l1,#e3e6eb);background:var(--dsw-alias-bg-base,#fff);color:var(--dsw-alias-label-primary,#1f2329);box-shadow:0 18px 60px rgba(0,0,0,.22);font-size:13px}
 .mp-head{display:flex;align-items:center;gap:10px;padding:16px 20px 12px;border-bottom:1px solid var(--dsw-alias-border-l1,#e3e6eb)}
