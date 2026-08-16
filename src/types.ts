@@ -107,7 +107,31 @@ export interface MemoryItem {
   links: string[]
   /** 内容哈希，去重合并闸的第一层。 */
   contentHash: string
+  /**
+   * 这条为什么自动入库、或为什么需要你看一眼。
+   *
+   * **每条记忆都必须能说清自己是怎么进来的**——用户凭这句话决定要不要调档位，
+   * 也凭它判断这个库值不值得信。面板直接把它显示出来，不做二次翻译。
+   */
+  gateReason: GateReason
 }
+
+/** 过闸判据。前两个是自动入库，其余都要人看。 */
+export type GateReason =
+  /** 置信度达标，直接入库 */
+  | '自动入库·置信达标'
+  /** 与已有记忆同结论，已并源 */
+  | '自动入库·多源印证'
+  /** 来源是 AI 推断（Claude 云端记忆），按契约绝不自动入库 */
+  | '待确认·AI 推断'
+  /** 动到了资源 / 方向 / 收入 */
+  | '待确认·高影响'
+  /** 与库里已有结论同主题但不同，谁对由你判 */
+  | '待确认·与已有记忆冲突'
+  /** 置信度低于阈值 */
+  | '待确认·置信不足'
+  /** 用户把档位调到了"全部人工确认" */
+  | '待确认·你选择了逐条确认'
 
 /**
  * 宿主 LLM 服务的切面（对应 @deepseek-ai/dsh-llm 的 `ctx.llm`）。
@@ -140,6 +164,26 @@ export interface DefaultModelSlice {
 }
 
 /**
+ * 宿主工具注册表切面（对应 `ctx.tools`）。
+ *
+ * `output` 是官方必填项：注册时就要声明这个工具的规范返回值长什么样、
+ * 以及怎么渲染给模型看。同样只声明我们用到的字段。
+ */
+export interface ToolsSlice {
+  register(definition: {
+    name: string
+    description: string
+    parameters: Record<string, unknown>
+    output: {
+      schema: Record<string, unknown>
+      render(args: unknown, value: unknown): { type: 'text'; text: string }[]
+    }
+    execute(args: unknown, exec: { signal?: AbortSignal }): Promise<unknown>
+    timeoutMs?: number
+  }): () => void
+}
+
+/**
  * host 侧我们用到的 dsh 上下文切面。
  *
  * 形状与 dsh-whale-meter 一致（那份已在真实 dsh 上跑通），另加 `llm` 与
@@ -164,6 +208,7 @@ export interface HostContext {
   }
   llm?: LlmSlice
   agentDefaultModel?: DefaultModelSlice
+  tools?: ToolsSlice
 }
 
 /** 插件配置（cordis.yml 里可改，不硬编码任何部署相关取值）。 */
@@ -174,7 +219,24 @@ export interface PorterConfig {
   claudeCodeRoot?: string
   /** 记忆落盘目录，默认 ~/.dsh/memory-porter。 */
   dataDir?: string
+  /** 人工闸松紧档，默认 balanced。面板可实时切换，见 ReviewMode。 */
+  reviewMode?: ReviewMode
 }
+
+/**
+ * 人工闸松紧档——**这条选择必须交给用户，且必须说人话**。
+ *
+ * 默认 balanced：网页导出（Claude / ChatGPT 搬家的主线来源）的置信度
+ * 恰好等于阈值 0.45，判据是 `<`，所以它自动入库。这个取舍摆在面板上明说，
+ * 想更保守的人一键切到 strict。
+ */
+export type ReviewMode =
+  /** 全部进待确认队列，一条都不自动入库 */
+  | 'strict'
+  /** 默认：高影响 / 冲突 / AI 推断 / 低置信才要你看 */
+  | 'balanced'
+  /** 只有 AI 推断和冲突才要你看，其余全自动 */
+  | 'trusting'
 
 /** 过闸之前的候选：还没拿到 id / confidence / 状态。 */
 export interface Candidate {

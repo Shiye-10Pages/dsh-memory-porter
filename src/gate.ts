@@ -12,7 +12,15 @@
  * 而不是自动判成同义或矛盾。
  */
 import { createHash } from 'node:crypto'
-import type { Candidate, MemoryItem, MemoryType, SourceKind, SourcePointer } from './types.ts'
+import type {
+  Candidate,
+  GateReason,
+  MemoryItem,
+  MemoryType,
+  ReviewMode,
+  SourceKind,
+  SourcePointer,
+} from './types.ts'
 
 /** 判为「几乎同一句」的阈值（三元组 Jaccard），达到即自动并源。 */
 export const AUTO_SAME = 0.9
@@ -168,8 +176,36 @@ export interface GateOptions {
   existing?: readonly MemoryItem[]
   /** 候选是否来自 LLM 提纯（影响置信度的抽取法项）。默认 true。 */
   byLlm?: boolean
+  /** 人工闸松紧档，默认 balanced。 */
+  reviewMode?: ReviewMode
   /** 当前时刻，注入以便测试。 */
   now?: number
+}
+
+/**
+ * 决定一条候选去哪儿，并给出**人话理由**。
+ *
+ * 顺序即优先级：来源要求 > 冲突 > 高影响 > 档位 > 置信度。
+ * 排在前面的理由更具体，用户更容易据此判断该不该调档。
+ */
+export function decideGate(input: {
+  candidate: Candidate
+  confidence: number
+  hasConflict: boolean
+  mode: ReviewMode
+}): GateReason {
+  const { candidate, confidence: score, hasConflict, mode } = input
+  if (candidate.forceReview) return '待确认·AI 推断'
+  if (hasConflict) return '待确认·与已有记忆冲突'
+  if (isHighImpact(candidate)) return '待确认·高影响'
+  if (mode === 'strict') return '待确认·你选择了逐条确认'
+  if (mode === 'trusting') return '自动入库·置信达标'
+  return score < LOW_CONFIDENCE ? '待确认·置信不足' : '自动入库·置信达标'
+}
+
+/** 理由是否指向"直接入库"。 */
+export function isAutoAccept(reason: GateReason): boolean {
+  return reason.startsWith('自动入库')
 }
 
 /**
@@ -179,6 +215,7 @@ export interface GateOptions {
  */
 export function gate(candidates: readonly Candidate[], options: GateOptions = {}): GateResult {
   const byLlm = options.byLlm ?? true
+  const mode = options.reviewMode ?? 'balanced'
   const now = options.now ?? Date.now()
   const result: GateResult = { accepted: [], pending: [], rejected: 0, merged: 0, nearPairs: [] }
 
@@ -216,6 +253,8 @@ export function gate(candidates: readonly Candidate[], options: GateOptions = {}
         // 几乎同一句 → 并源、升置信度，不再插新条。
         item.sources.push(...sources)
         item.confidence = confidence(candidate.source.source, item.sources.length, byLlm)
+        // 多源印证过的条目，理由要如实升级——用户看到的是"两处都说过"，不是原来那句。
+        if (isAutoAccept(item.gateReason)) item.gateReason = '自动入库·多源印证'
         result.merged++
         mergedIntoExisting = true
         break
@@ -230,6 +269,7 @@ export function gate(candidates: readonly Candidate[], options: GateOptions = {}
 
     const score = confidence(candidate.source.source, sources.length, byLlm)
     const linked = result.nearPairs.filter(pair => pair.a === id).map(pair => pair.b)
+    const reason = decideGate({ candidate, confidence: score, hasConflict: linked.length > 0, mode })
     const item: MemoryItem = {
       id,
       type: candidate.type as MemoryType,
@@ -244,6 +284,7 @@ export function gate(candidates: readonly Candidate[], options: GateOptions = {}
       reviewDate: isoDate(now, REVIEW_DAYS),
       links: linked,
       contentHash: id,
+      gateReason: reason,
     }
     // 互链是双向的：旧条也要记住有新条在争。
     for (const otherId of linked) {
@@ -252,9 +293,8 @@ export function gate(candidates: readonly Candidate[], options: GateOptions = {}
     }
 
     // ④ 人工闸
-    const needsHuman = candidate.forceReview || isHighImpact(candidate) || score < LOW_CONFIDENCE || linked.length > 0
-    if (needsHuman) result.pending.push(item)
-    else result.accepted.push(item)
+    if (isAutoAccept(reason)) result.accepted.push(item)
+    else result.pending.push(item)
     existing.push(item)
   }
 

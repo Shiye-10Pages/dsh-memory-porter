@@ -1,42 +1,49 @@
 /**
  * 会话头部的入口按钮。
  *
- * 现在只做一件事：显示本机可搬的会话数——**第一屏那个数字本身就是钩子**
- * （「你有 1,247 个对话还没搬」）。M6 会把点击展开成完整面板。
+ * 徽章上那个数字本身就是钩子——「你还有 1,247 个对话没搬」。
+ * 有待确认条目时挂一个小红点，点开是完整面板。
  */
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { api, type Available } from './api.ts'
+import { Panel } from './Panel.tsx'
 
-interface Available {
-  claudeCode: number
-  scanLimit: number
-}
-
-export function PorterAction(): JSX.Element | null {
+export function PorterAction(): React.JSX.Element | null {
   const [available, setAvailable] = useState<Available | undefined>(undefined)
+  const [open, setOpen] = useState(false)
 
   useEffect(() => {
     let cancelled = false
-    void fetch('/memory-porter/api/available')
-      .then(response => (response.ok ? response.json() : undefined))
-      .then((data: Available | undefined) => {
-        if (!cancelled && data !== undefined) setAvailable(data)
+    void api.available()
+      .then(data => {
+        if (!cancelled) setAvailable(data)
       })
       .catch(() => undefined)
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [open])
 
-  // 没东西可搬就不占位——空状态的按钮只是噪声。
-  if (available === undefined || available.claudeCode === 0) return null
+  // host 半不可用、且本机也没东西可搬时整体隐身——空按钮只是噪声。
+  if (available === undefined) return null
+  const total = available.claudeCode + available.memories + available.pending
+  if (total === 0) return null
 
   return (
-    <button
-      type="button"
-      className="memory-porter-action"
-      title={`本机还有 ${available.claudeCode} 个 Claude Code 会话可以搬进来`}
-    >
-      {`📦 ${available.claudeCode}`}
-    </button>
+    <>
+      <button
+        type="button"
+        className="mp-chip"
+        title={`记忆搬家：本机 ${available.claudeCode} 个会话可搬 · 已入库 ${available.memories} 条 · ${available.pending} 条待确认`}
+        onClick={() => setOpen(true)}
+      >
+        <span>📦</span>
+        <span>{available.memories > 0 ? available.memories : available.claudeCode}</span>
+        {available.pending > 0 && <span className="mp-chip-dot" />}
+      </button>
+      {open && typeof document !== 'undefined'
+        && createPortal(<Panel onClose={() => setOpen(false)} />, document.body)}
+    </>
   )
 }

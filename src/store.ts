@@ -168,19 +168,36 @@ export class MemoryStore {
     return true
   }
 
-  /** 面板顶部的那几个数字。 */
-  summary(): { memories: number; pending: number; decided: number; bySource: Record<string, number> } {
+  /**
+   * 面板顶部的那几个数字。
+   *
+   * `byReason` 是刻意加的：**每条记忆凭什么进来，要能一眼看清**。
+   * 用户据此判断当前档位合不合适，而不是被一个黑箱决定记忆库里有什么。
+   */
+  summary(): {
+    memories: number
+    pending: number
+    decided: number
+    bySource: Record<string, number>
+    byReason: Record<string, number>
+  } {
     const bySource: Record<string, number> = {}
+    const byReason: Record<string, number> = {}
     for (const item of this.memories.values()) {
       for (const source of item.sources) {
         bySource[source.source] = (bySource[source.source] ?? 0) + 1
       }
+      byReason[item.gateReason] = (byReason[item.gateReason] ?? 0) + 1
+    }
+    for (const item of this.pending.values()) {
+      byReason[item.gateReason] = (byReason[item.gateReason] ?? 0) + 1
     }
     return {
       memories: this.memories.size,
       pending: this.pending.size,
       decided: this.decisions.size,
       bySource,
+      byReason,
     }
   }
 
@@ -196,6 +213,7 @@ export class MemoryStore {
       lines.push(`- 置信度：${item.confidence}`)
       lines.push(`- 生效：${item.validFrom}${item.validUntil === null ? '（现行）' : ` → ${item.validUntil}`}`)
       lines.push(`- 来源：${item.sources.map(s => `${s.source}:${s.convId}`).join('、')}`)
+      lines.push(`- 入库依据：${item.gateReason}`)
       if (item.context !== undefined) lines.push(`- 情境：${item.context}`)
       lines.push('', '> ' + item.evidence.split('\n').join('\n> '), '')
     }

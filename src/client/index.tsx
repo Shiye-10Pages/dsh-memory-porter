@@ -7,6 +7,7 @@
  * M6 会把面板三页（搬家 / 待确认 / 记忆库）挂到这里；现在先把接线跑通。
  */
 import { PorterAction } from './PorterAction.tsx'
+import { injectStyles } from './styles.ts'
 import { NS, en, zh } from './locales.ts'
 
 export const name = 'memory-porter-client'
@@ -24,6 +25,8 @@ interface ClientLikeContext {
 }
 
 export function apply(ctx: ClientLikeContext): void {
+  injectStyles()
+
   try {
     if (ctx.locale?.register !== undefined) {
       ctx.effect(

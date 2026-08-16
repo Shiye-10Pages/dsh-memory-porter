@@ -125,6 +125,7 @@ describe('去重合并闸', () => {
       reviewDate: '2026-08-15',
       links: [],
       contentHash: 'x',
+      gateReason: '自动入库·置信达标',
     }]
     const result = gate([candidate()], { existing, now: NOW })
     expect(result.accepted).toHaveLength(0)
@@ -149,6 +150,7 @@ describe('矛盾闸', () => {
     reviewDate: '2026-08-15',
     links: [],
     contentHash: 'x',
+    gateReason: '自动入库·置信达标',
   }]
 
   it('近义但不同结论 → 两条都留、互链、交人工裁决', () => {

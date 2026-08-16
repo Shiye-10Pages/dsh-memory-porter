@@ -11,6 +11,7 @@ import { countAvailable, importPath, scanClaudeCode } from './connectors/index.t
 import { estimateCost } from './cost.ts'
 import { distill, renderConversation } from './distill.ts'
 import { gate } from './gate.ts'
+import { formatHits, RecallIndex } from './recall.ts'
 import { MemoryStore } from './store.ts'
 import type { Candidate, HostContext, PorterConfig, RawConversation } from './types.ts'
 
@@ -20,7 +21,10 @@ export const name = 'memory-porter'
  * `webServer` 必需；`llm` / `agentDefaultModel` 走可选注入 ——
  * 没挂载时插件照常提供扫描与导入，只是提纯那步如实报错，而不是整个插件加载失败。
  */
-export const inject = { required: ['webServer'], optional: ['llm', 'agentDefaultModel'] }
+export const inject = {
+  required: ['webServer'],
+  optional: ['llm', 'agentDefaultModel', 'tools'],
+}
 
 /** 请求体上限：一份 ChatGPT 导出的路径 JSON 撑死几百字节，给足余量即可。 */
 const MAX_BODY_BYTES = 64 * 1024
@@ -33,10 +37,28 @@ export function apply(ctx: HostContext, config: PorterConfig = {}): void {
     ctx.logger.info(`memory-porter: ready (${summary.memories} 条记忆 · ${summary.pending} 条待确认)`)
   })
 
+  /**
+   * 检索索引。记忆库一变就作废，下次召回时重建——记忆量级小（几百到几千条），
+   * 重建比维护增量索引便宜也不容易错。
+   */
+  let index: RecallIndex | undefined
+  const invalidateIndex = (): void => {
+    index = undefined
+  }
+  const currentIndex = (): RecallIndex => {
+    if (index === undefined) index = new RecallIndex(store.all())
+    return index
+  }
+
   /** 过闸 + 落盘。候选来自提纯，或来自 Claude 云端记忆这类直采源。 */
   async function ingest(candidates: readonly Candidate[], byLlm: boolean) {
-    const result = gate(candidates, { existing: store.all(), byLlm })
+    const result = gate(candidates, {
+      existing: store.all(),
+      byLlm,
+      reviewMode: config.reviewMode,
+    })
     const written = await store.write(result.accepted, result.pending)
+    invalidateIndex()
     return {
       accepted: written.accepted,
       pending: written.pending,
@@ -228,7 +250,21 @@ export function apply(ctx: HostContext, config: PorterConfig = {}): void {
             return
           }
           const ok = await store.decide(id, decision)
+          if (ok) invalidateIndex()
           sendJson(res, ok ? 200 : 404, ok ? store.summary() : { error: '队列里没有这条' })
+          return
+        }
+        // 面板里试召回，验证"搬进来的东西真的能被找到"。
+        if (pathname === '/memory-porter/api/recall') {
+          const body = (await readBody(req)) as { query?: unknown; topk?: unknown }
+          const query = typeof body?.query === 'string' ? body.query : ''
+          const topk = typeof body?.topk === 'number' ? body.topk : 6
+          await store.load()
+          const hits = currentIndex().search(query, topk)
+          sendJson(res, 200, {
+            count: hits.length,
+            hits: hits.map(hit => ({ score: hit.score, ...hit.item })),
+          })
           return
         }
         sendJson(res, 404, { error: 'not found' })
@@ -253,5 +289,57 @@ export function apply(ctx: HostContext, config: PorterConfig = {}): void {
     'memory-porter: api route',
   )
 
-  ctx.logger.info(`memory-porter: ready (scanLimit=${scanLimit})`)
+  // 把 recall_memory 注册成原生工具，模型可以直接调用；宿主没挂 tools 就跳过，
+  // 面板照常可用（那时用户还能靠 MCP 桥接上主库）。
+  if (ctx.tools !== undefined) {
+    ctx.effect(
+      () => ctx.tools!.register({
+        name: 'recall_memory',
+        description:
+          '从「记忆搬家」库里召回相关的长期记忆（决策 / 偏好 / 方法论 / 经验等），'
+          + '返回带【逐字证据 + 来源 + 置信度】的记忆原子。'
+          + '在需要回顾过往决定、了解用户既定偏好与业务背景、避免重复决策时调用。'
+          + '标记为「待核」的条目尚未经用户确认，不得当成既定事实。',
+        parameters: {
+          type: 'object',
+          properties: {
+            query: { type: 'string', description: '自然语言问题或主题' },
+            topk: { type: 'integer', description: '返回条数，默认 6', minimum: 1, maximum: 20 },
+          },
+          required: ['query'],
+          additionalProperties: false,
+        },
+        output: {
+          schema: {
+            type: 'object',
+            properties: {
+              text: { type: 'string' },
+              count: { type: 'integer' },
+            },
+            required: ['text', 'count'],
+            additionalProperties: false,
+          },
+          render: (_args, value) => [{
+            type: 'text',
+            text: String((value as { text?: unknown })?.text ?? ''),
+          }],
+        },
+        timeoutMs: 10_000,
+        execute: async args => {
+          const input = args as { query?: unknown; topk?: unknown }
+          const query = typeof input?.query === 'string' ? input.query : ''
+          const topk = typeof input?.topk === 'number' ? Math.min(20, Math.max(1, input.topk)) : 6
+          await store.load()
+          const hits = currentIndex().search(query, topk)
+          return { text: formatHits(hits), count: hits.length }
+        },
+      }),
+      'memory-porter: recall_memory tool',
+    )
+  }
+
+  ctx.logger.info(
+    `memory-porter: ready (scanLimit=${scanLimit}, reviewMode=${config.reviewMode ?? 'balanced'}`
+    + `${ctx.tools === undefined ? ', 未挂载 tools：recall_memory 不可用' : ''})`,
+  )
 }

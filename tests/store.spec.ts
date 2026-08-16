@@ -25,6 +25,7 @@ function item(id: string, overrides: Partial<MemoryItem> = {}): MemoryItem {
     reviewDate: '2026-08-30',
     links: [],
     contentHash: id,
+    gateReason: '自动入库·置信达标',
     ...overrides,
   }
 }
