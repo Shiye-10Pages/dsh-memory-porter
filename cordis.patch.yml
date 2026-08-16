@@ -1,0 +1,5 @@
+# dsh-memory-porter 组合包配置层：插入 host 侧插件行。
+# 浏览器侧无需配置行 —— dsh.client 声明会被客户端模块系统自动扫描加载。
+- insert:
+    - id: memory-porter
+      name: dsh-memory-porter

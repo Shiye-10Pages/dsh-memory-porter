@@ -1,0 +1,12 @@
+node_modules/
+lib/
+*.tgz
+.DS_Store
+
+# 真实个人数据只进本机，绝不进仓库 ——
+# E2E 用的是十页自己的 Claude / ChatGPT 导出。
+imports/
+*.zip
+conversations.json
+memories.json
+tests/fixtures/real/
