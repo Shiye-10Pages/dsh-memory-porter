@@ -10,10 +10,33 @@
  */
 import type { Candidate, LlmSlice, MemoryType, RawConversation, SourcePointer } from './types.ts'
 
-/** 保真契约 v1 允许的记忆类型，模型返回表外类型一律降级为「认知」。 */
+/** 保真契约 v1 只认这 9 类。 */
 const MEMORY_TYPES: readonly MemoryType[] = [
   '方法论', '决策', '经验', 'SOP', '认知', '反馈', '事实', '偏好', '关系',
 ]
+
+/**
+ * LLM 常自造类型（行动 / 风险 / 定价…）。直接丢会损失信号，直接收会架空契约，
+ * 所以归一到 9 类——映射表移植自 MemoryHub 主库 gate.py，是真实跑出来的野生类型清单。
+ */
+const TYPE_REMAP: Readonly<Record<string, MemoryType>> = {
+  行动: 'SOP', 话术: 'SOP', 规则: 'SOP', 技术规范: 'SOP',
+  纪律: 'SOP', 护栏: 'SOP', 安全约束: 'SOP',
+  风险: '认知', 原则: '认知', 问题: '认知', 安全: '认知', 机会: '认知',
+  痛点: '认知', 预测: '认知', 产品模型: '认知', 技术: '认知', 假设: '认知',
+  影响: '决策', 目标: '决策', 定位: '决策', 策略: '决策', 定价: '决策',
+  内容策略: '决策', 需求: '决策', 转化策略: '决策', 方向: '决策',
+  功能: '事实', 产品: '事实', bug: '事实', 错误: '事实', 资产: '事实',
+  人设: '偏好', 角色定义: '偏好', 角色定位: '偏好',
+  避坑: '经验',
+}
+
+/** 把模型给的类型归一到契约 9 类；认不出的兜底为「认知」（最泛，不丢条）。 */
+export function normalizeType(raw: string): MemoryType {
+  const type = raw.trim()
+  if ((MEMORY_TYPES as readonly string[]).includes(type)) return type as MemoryType
+  return TYPE_REMAP[type] ?? TYPE_REMAP[type.toLowerCase()] ?? '认知'
+}
 
 /**
  * 单次喂给模型的原文字符预算。
@@ -28,11 +51,14 @@ const CONCURRENCY = 3
 
 const SYSTEM_PROMPT = `你是一个记忆提炼器。用户会给你一段他与 AI 的历史对话，你要从中挑出**值得长期记住**的结论。
 
-四重提纯过滤器，四条**全部**满足才算数：
-1. 洞察：是判断、结论或原则，不是流水账、不是当时的临时状态。
+四重提纯过滤器：
+1. 洞察：改变了理解，是判断/结论/原则，不是流水账。
 2. 行动：将来能指导做事，而不只是"知道了"。
 3. 复用：换个场景仍然成立，不是一次性的具体操作。
-4. 影响：动到了资源、方向或收入——这条为"是"时必须标记 impact=true。
+4. 影响：动到了资源、方向或收入。
+
+判定规则：**前三条任一为是就该沉淀**；第四条为是时，即使前三条皆否也必须沉淀，
+并标记 impact=true。
 
 硬性要求：
 - evidence 必须从原文里**逐字复制**，一个字都不能改写、不能拼接、不能补标点。宁可少提，不许改写。
@@ -112,8 +138,7 @@ export function toCandidate(item: unknown, source: SourcePointer, sourceText: st
   if (claim === '' || evidence === '') return undefined
   if (!isVerbatim(evidence, sourceText)) return undefined
 
-  const rawType = typeof record.type === 'string' ? record.type.trim() : ''
-  const type = (MEMORY_TYPES as readonly string[]).includes(rawType) ? (rawType as MemoryType) : '认知'
+  const type = normalizeType(typeof record.type === 'string' ? record.type : '')
   const context = typeof record.context === 'string' && record.context.trim() !== ''
     ? record.context.trim()
     : undefined
@@ -124,8 +149,9 @@ export function toCandidate(item: unknown, source: SourcePointer, sourceText: st
     evidence,
     context,
     source,
-    // 命中影响过滤器 → 契约要求必须走人工闸。
-    forceReview: record.impact === true,
+    impact: record.impact === true,
+    // 提纯出来的都是逐字证据支撑的候选，人工闸由 gate 按影响与置信度决定。
+    forceReview: false,
   }
 }
 

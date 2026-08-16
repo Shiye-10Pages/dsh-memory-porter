@@ -73,7 +73,21 @@ describe('候选归一', () => {
       sourceText,
     )
     expect(candidate?.type).toBe('决策')
-    expect(candidate?.forceReview).toBe(true)
+    // impact 只是模型的判定，是否走人工闸由保真闸决定（见 gate.ts 的 isHighImpact）。
+    expect(candidate?.impact).toBe(true)
+    expect(candidate?.forceReview).toBe(false)
+  })
+
+  it('野生类型归一到契约 9 类', () => {
+    const make = (type: string) => toCandidate(
+      { type, claim: 'x', evidence: '以后所有插件都发 MIT' },
+      SOURCE,
+      '用户：以后所有插件都发 MIT，主库继续 PolyForm。',
+    )
+    expect(make('行动')?.type).toBe('SOP')
+    expect(make('定价')?.type).toBe('决策')
+    expect(make('风险')?.type).toBe('认知')
+    expect(make('避坑')?.type).toBe('经验')
   })
 
   it('表外类型降级为「认知」而不是丢掉', () => {
@@ -99,9 +113,9 @@ describe('候选归一', () => {
     expect(toCandidate(null, SOURCE, sourceText)).toBeUndefined()
   })
 
-  it('impact 缺省时不强制人工闸', () => {
+  it('impact 缺省时为 false', () => {
     const candidate = toCandidate({ claim: 'x', evidence: '以后所有插件都发 MIT' }, SOURCE, sourceText)
-    expect(candidate?.forceReview).toBe(false)
+    expect(candidate?.impact).toBe(false)
   })
 })
 

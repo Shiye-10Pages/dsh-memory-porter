@@ -172,6 +172,8 @@ export interface PorterConfig {
   scanLimit?: number
   /** Claude Code 会话根目录，默认 ~/.claude/projects。 */
   claudeCodeRoot?: string
+  /** 记忆落盘目录，默认 ~/.dsh/memory-porter。 */
+  dataDir?: string
 }
 
 /** 过闸之前的候选：还没拿到 id / confidence / 状态。 */
@@ -182,8 +184,16 @@ export interface Candidate {
   context?: string
   source: SourcePointer
   /**
-   * 命中「影响过滤器」（动资源 / 方向 / 收入）——
-   * 契约要求这类候选**必须**走人工闸，即使其余三重过滤器都为否。
+   * 模型判定命中了「影响过滤器」（动资源 / 方向 / 收入）。
+   *
+   * 注意这只是**模型的判定**，不直接等于走人工闸——主库的教训是单个高频词
+   * （方向 / 课程 / 付费）会把普通候选大批刷进人工闸（曾积压 672 条）。
+   * 真正的判定在人工闸里做，见 gate.ts 的 `isHighImpact`。
+   */
+  impact: boolean
+  /**
+   * 来源本身就要求人工确认（与 impact 无关）。
+   * 目前只有 Claude 云端记忆走这条：它是 AI 推断的结论，不是你逐字说过的话。
    */
   forceReview: boolean
 }

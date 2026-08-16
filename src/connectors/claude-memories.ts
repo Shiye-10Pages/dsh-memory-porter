@@ -57,6 +57,7 @@ export function parseClaudeMemories(data: unknown, uri = 'memories.json'): Candi
       evidence: body,
       context: 'claude.ai 云端记忆 · conversations_memory',
       source: source(`conv:${title}`),
+      impact: false,
       forceReview: true,
     })
   }
@@ -71,6 +72,7 @@ export function parseClaudeMemories(data: unknown, uri = 'memories.json'): Candi
         evidence: value.trim(),
         context: 'claude.ai 云端记忆 · project_memories',
         source: source(`proj:${key}`),
+        impact: false,
         forceReview: true,
       })
     }
@@ -87,6 +89,7 @@ export function parseClaudeMemories(data: unknown, uri = 'memories.json'): Candi
         evidence: content,
         context: `claude.ai 云端记忆 · memory_files${path === '' ? '' : ` · ${path}`}`,
         source: source(`file:${path}`),
+        impact: false,
         forceReview: true,
       })
     }

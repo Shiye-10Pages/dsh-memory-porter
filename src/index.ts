@@ -10,7 +10,9 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { countAvailable, importPath, scanClaudeCode } from './connectors/index.ts'
 import { estimateCost } from './cost.ts'
 import { distill, renderConversation } from './distill.ts'
-import type { HostContext, PorterConfig, RawConversation } from './types.ts'
+import { gate } from './gate.ts'
+import { MemoryStore } from './store.ts'
+import type { Candidate, HostContext, PorterConfig, RawConversation } from './types.ts'
 
 export const name = 'memory-porter'
 
@@ -25,6 +27,25 @@ const MAX_BODY_BYTES = 64 * 1024
 
 export function apply(ctx: HostContext, config: PorterConfig = {}): void {
   const scanLimit = config.scanLimit ?? 100
+  const store = new MemoryStore(config.dataDir, message => ctx.logger.warn(message))
+  void store.load().then(() => {
+    const summary = store.summary()
+    ctx.logger.info(`memory-porter: ready (${summary.memories} 条记忆 · ${summary.pending} 条待确认)`)
+  })
+
+  /** 过闸 + 落盘。候选来自提纯，或来自 Claude 云端记忆这类直采源。 */
+  async function ingest(candidates: readonly Candidate[], byLlm: boolean) {
+    const result = gate(candidates, { existing: store.all(), byLlm })
+    const written = await store.write(result.accepted, result.pending)
+    return {
+      accepted: written.accepted,
+      pending: written.pending,
+      skipped: written.skipped,
+      rejected: result.rejected,
+      merged: result.merged,
+      nearPairs: result.nearPairs.length,
+    }
+  }
 
   function sendJson(res: ServerResponse, status: number, body: unknown, headOnly = false): void {
     const payload = JSON.stringify(body)
@@ -92,7 +113,28 @@ export function apply(ctx: HostContext, config: PorterConfig = {}): void {
         // 开跑前先告诉用户"你有多少东西可搬"——这是第一屏的那个数字。
         if (pathname === '/memory-porter/api/available') {
           const total = await countAvailable(config.claudeCodeRoot)
-          sendJson(res, 200, { claudeCode: total, scanLimit }, headOnly)
+          sendJson(res, 200, { claudeCode: total, scanLimit, ...store.summary() }, headOnly)
+          return
+        }
+        if (pathname === '/memory-porter/api/queue') {
+          sendJson(res, 200, { queue: store.queue() }, headOnly)
+          return
+        }
+        if (pathname === '/memory-porter/api/memories') {
+          sendJson(res, 200, { memories: store.all() }, headOnly)
+          return
+        }
+        // 导出给其他记忆插件吃 —— 「做上游不做竞品」的物理实现。
+        if (pathname === '/memory-porter/api/export') {
+          const format = new URL(req.url ?? '/', 'http://localhost').searchParams.get('format')
+          const jsonl = format === 'jsonl'
+          const body = jsonl ? store.exportJsonl() : store.exportMarkdown()
+          res.writeHead(200, {
+            'content-type': jsonl ? 'application/x-ndjson; charset=utf-8' : 'text/markdown; charset=utf-8',
+            'content-length': String(Buffer.byteLength(body)),
+            'cache-control': 'no-store',
+          })
+          res.end(headOnly ? undefined : body)
           return
         }
         sendJson(res, 404, { error: 'not found' }, headOnly)
@@ -119,10 +161,15 @@ export function apply(ctx: HostContext, config: PorterConfig = {}): void {
             return
           }
           const imported = await importPath(body.path)
+          // Claude 云端记忆已经是结论，无需提纯，直接过闸落盘（零 token 成本）。
+          const ingested = imported.candidates.length > 0
+            ? await ingest(imported.candidates, false)
+            : undefined
           sendJson(res, 200, {
             results: imported.results,
             conversations: digest(imported.conversations),
             candidates: imported.candidates.length,
+            ingested,
           })
           return
         }
@@ -160,13 +207,28 @@ export function apply(ctx: HostContext, config: PorterConfig = {}): void {
             provider: resolved.provider,
             model: resolved.model,
           })
+          const ingested = await ingest(result.candidates, true)
           sendJson(res, 200, {
             conversations: conversations.length,
             candidates: result.candidates.length,
             rejectedNotVerbatim: result.rejectedNotVerbatim,
             usage: result.usage,
             errors: result.errors,
+            ingested,
           })
+          return
+        }
+        // 逐条批准 / 丢弃。丢弃只记决定，那条候选不会再回到队列。
+        if (pathname === '/memory-porter/api/decide') {
+          const body = (await readBody(req)) as { id?: unknown; decision?: unknown }
+          const id = typeof body?.id === 'string' ? body.id : ''
+          const decision = body?.decision
+          if (id === '' || (decision !== 'approved' && decision !== 'discarded')) {
+            sendJson(res, 400, { error: '需要 id 与 decision(approved|discarded)' })
+            return
+          }
+          const ok = await store.decide(id, decision)
+          sendJson(res, ok ? 200 : 404, ok ? store.summary() : { error: '队列里没有这条' })
           return
         }
         sendJson(res, 404, { error: 'not found' })
