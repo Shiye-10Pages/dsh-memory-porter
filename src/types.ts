@@ -194,6 +194,16 @@ export interface ToolsSlice {
 export interface HostContext {
   on(event: string, listener: (...args: any[]) => any): () => void
   effect(callback: () => void | (() => void), label?: string): void
+  /**
+   * 机会性取用一个可能没挂载的服务。
+   *
+   * 这版 Cordis 的 `inject` **只有必需语义**——声明了就等，等不到插件永远不激活
+   * （对象形态会被当成「服务名 → 配置」的映射，不是 `{required, optional}`）。
+   * 所以可选依赖只能这样在用的时候现取。
+   */
+  get<T = unknown>(name: string): T | undefined
+  /** 等某些服务就绪后再跑一段。用于「有就注册、没有就算了」的可选接线。 */
+  inject(names: readonly string[], callback: (ctx: HostContext) => void): void
   logger: { info(msg: string): void; warn(msg: string): void; debug?(msg: string): void }
   webServer: {
     register(route: {
@@ -206,9 +216,6 @@ export interface HostContext {
       ) => void | Promise<void>
     }): () => void
   }
-  llm?: LlmSlice
-  agentDefaultModel?: DefaultModelSlice
-  tools?: ToolsSlice
 }
 
 /** 插件配置（cordis.yml 里可改，不硬编码任何部署相关取值）。 */

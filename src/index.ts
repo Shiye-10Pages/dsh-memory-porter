@@ -13,18 +13,30 @@ import { distill, renderConversation } from './distill.ts'
 import { gate } from './gate.ts'
 import { formatHits, RecallIndex } from './recall.ts'
 import { MemoryStore } from './store.ts'
-import type { Candidate, HostContext, PorterConfig, RawConversation } from './types.ts'
+import type {
+  Candidate,
+  DefaultModelSlice,
+  HostContext,
+  LlmSlice,
+  PorterConfig,
+  RawConversation,
+  ToolsSlice,
+} from './types.ts'
 
 export const name = 'memory-porter'
 
 /**
- * `webServer` 必需；`llm` / `agentDefaultModel` 走可选注入 ——
- * 没挂载时插件照常提供扫描与导入，只是提纯那步如实报错，而不是整个插件加载失败。
+ * **只声明真正必需的那一个。**
+ *
+ * 这版 Cordis 的 `inject` 没有可选语义：数组里的每一项都是硬依赖，等不到就
+ * 永远停在 pending；对象形态会被当成「服务名 → 配置」的映射，写
+ * `{required:[...], optional:[...]}` 会让它去等两个名叫 required / optional
+ * 的服务（真机首次启动就是这么炸的）。
+ *
+ * 所以 `llm` / `agentDefaultModel` 在用的时候用 `ctx.get()` 现取，
+ * `tools` 用 `ctx.inject()` 等它就绪后再注册——没有它们插件照样能扫描、能导入。
  */
-export const inject = {
-  required: ['webServer'],
-  optional: ['llm', 'agentDefaultModel', 'tools'],
-}
+export const inject = ['webServer']
 
 /** 请求体上限：一份 ChatGPT 导出的路径 JSON 撑死几百字节，给足余量即可。 */
 const MAX_BODY_BYTES = 64 * 1024
@@ -118,13 +130,14 @@ export function apply(ctx: HostContext, config: PorterConfig = {}): void {
    * 拿不到就说明这套 dsh 没挂 llm 或默认模型服务——如实回错，
    * 不去猜一个模型名替用户花钱。
    */
-  function resolveModel(): { provider: string; model: string } | { error: string } {
-    if (ctx.llm === undefined) return { error: '当前 dsh 没有挂载 llm 服务，无法提纯' }
-    const selection = ctx.agentDefaultModel?.currentSelection()
+  function resolveModel(): { provider: string; model: string; llm: LlmSlice } | { error: string } {
+    const llm = ctx.get<LlmSlice>('llm')
+    if (llm === undefined) return { error: '当前 dsh 没有挂载 llm 服务，无法提纯' }
+    const selection = ctx.get<DefaultModelSlice>('agentDefaultModel')?.currentSelection()
     if (selection === undefined || selection.provider === '' || selection.model === '') {
       return { error: '读不到 dsh 的默认模型，请先在设置里选一个模型' }
     }
-    return { provider: selection.provider, model: selection.model }
+    return { provider: selection.provider, model: selection.model, llm }
   }
 
   async function handler(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -225,7 +238,7 @@ export function apply(ctx: HostContext, config: PorterConfig = {}): void {
           }
           const conversations = await collectConversations(body)
           const result = await distill(conversations, {
-            llm: ctx.llm!,
+            llm: resolved.llm,
             provider: resolved.provider,
             model: resolved.model,
           })
@@ -289,11 +302,14 @@ export function apply(ctx: HostContext, config: PorterConfig = {}): void {
     'memory-porter: api route',
   )
 
-  // 把 recall_memory 注册成原生工具，模型可以直接调用；宿主没挂 tools 就跳过，
-  // 面板照常可用（那时用户还能靠 MCP 桥接上主库）。
-  if (ctx.tools !== undefined) {
-    ctx.effect(
-      () => ctx.tools!.register({
+  // 把 recall_memory 注册成原生工具，模型可以直接调用。
+  // 用 ctx.inject 等 tools 就绪：宿主没挂 tools 时这段永远不跑，插件本身照常激活
+  // （面板可用，用户还能靠 MCP 桥接上主库）。
+  ctx.inject(['tools'], toolCtx => {
+    const tools = toolCtx.get<ToolsSlice>('tools')
+    if (tools === undefined) return
+    toolCtx.effect(
+      () => tools.register({
         name: 'recall_memory',
         description:
           '从「记忆搬家」库里召回相关的长期记忆（决策 / 偏好 / 方法论 / 经验等），'
@@ -336,10 +352,10 @@ export function apply(ctx: HostContext, config: PorterConfig = {}): void {
       }),
       'memory-porter: recall_memory tool',
     )
-  }
+    toolCtx.logger.info('memory-porter: recall_memory 已注册')
+  })
 
   ctx.logger.info(
-    `memory-porter: ready (scanLimit=${scanLimit}, reviewMode=${config.reviewMode ?? 'balanced'}`
-    + `${ctx.tools === undefined ? ', 未挂载 tools：recall_memory 不可用' : ''})`,
+    `memory-porter: ready (scanLimit=${scanLimit}, reviewMode=${config.reviewMode ?? 'balanced'})`,
   )
 }
