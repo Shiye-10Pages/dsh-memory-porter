@@ -8,11 +8,17 @@
  */
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { countAvailable, importPath, scanClaudeCode } from './connectors/index.ts'
-import type { HostContext, PorterConfig } from './types.ts'
+import { estimateCost } from './cost.ts'
+import { distill, renderConversation } from './distill.ts'
+import type { HostContext, PorterConfig, RawConversation } from './types.ts'
 
 export const name = 'memory-porter'
 
-export const inject = ['webServer']
+/**
+ * `webServer` 必需；`llm` / `agentDefaultModel` 走可选注入 ——
+ * 没挂载时插件照常提供扫描与导入，只是提纯那步如实报错，而不是整个插件加载失败。
+ */
+export const inject = { required: ['webServer'], optional: ['llm', 'agentDefaultModel'] }
 
 /** 请求体上限：一份 ChatGPT 导出的路径 JSON 撑死几百字节，给足余量即可。 */
 const MAX_BODY_BYTES = 64 * 1024
@@ -54,6 +60,30 @@ export function apply(ctx: HostContext, config: PorterConfig = {}): void {
     }))
   }
 
+  /** 按请求体取一批会话：不给 path 就扫本机 Claude Code。 */
+  async function collectConversations(body: { path?: unknown; limit?: unknown }): Promise<RawConversation[]> {
+    if (typeof body?.path === 'string' && body.path !== '') {
+      return (await importPath(body.path)).conversations
+    }
+    const limit = typeof body?.limit === 'number' ? body.limit : scanLimit
+    return (await scanClaudeCode({ root: config.claudeCodeRoot, limitConversations: limit })).conversations
+  }
+
+  /**
+   * 解析出宿主当前的 provider/model。
+   *
+   * 拿不到就说明这套 dsh 没挂 llm 或默认模型服务——如实回错，
+   * 不去猜一个模型名替用户花钱。
+   */
+  function resolveModel(): { provider: string; model: string } | { error: string } {
+    if (ctx.llm === undefined) return { error: '当前 dsh 没有挂载 llm 服务，无法提纯' }
+    const selection = ctx.agentDefaultModel?.currentSelection()
+    if (selection === undefined || selection.provider === '' || selection.model === '') {
+      return { error: '读不到 dsh 的默认模型，请先在设置里选一个模型' }
+    }
+    return { provider: selection.provider, model: selection.model }
+  }
+
   async function handler(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const headOnly = req.method === 'HEAD'
     const pathname = new URL(req.url ?? '/', 'http://localhost').pathname
@@ -93,6 +123,49 @@ export function apply(ctx: HostContext, config: PorterConfig = {}): void {
             results: imported.results,
             conversations: digest(imported.conversations),
             candidates: imported.candidates.length,
+          })
+          return
+        }
+        // 开跑前的预估：花多少钱、现在跑还是等空闲时段跑。
+        if (pathname === '/memory-porter/api/estimate') {
+          const body = (await readBody(req)) as { path?: unknown; limit?: unknown }
+          const resolved = resolveModel()
+          if ('error' in resolved) {
+            sendJson(res, 409, { error: resolved.error })
+            return
+          }
+          const conversations = await collectConversations(body)
+          const texts = conversations.map(c => renderConversation(c.turns))
+          sendJson(res, 200, {
+            conversations: conversations.length,
+            estimate: estimateCost(texts, resolved.model, Date.now()),
+          })
+          return
+        }
+        // 真花钱的那一步：用户在面板上看过预估、点了确认才会走到这里。
+        if (pathname === '/memory-porter/api/distill') {
+          const body = (await readBody(req)) as { path?: unknown; limit?: unknown; confirm?: unknown }
+          if (body?.confirm !== true) {
+            sendJson(res, 400, { error: '缺少 confirm —— 提纯要花钱，必须先看预估再确认' })
+            return
+          }
+          const resolved = resolveModel()
+          if ('error' in resolved) {
+            sendJson(res, 409, { error: resolved.error })
+            return
+          }
+          const conversations = await collectConversations(body)
+          const result = await distill(conversations, {
+            llm: ctx.llm!,
+            provider: resolved.provider,
+            model: resolved.model,
+          })
+          sendJson(res, 200, {
+            conversations: conversations.length,
+            candidates: result.candidates.length,
+            rejectedNotVerbatim: result.rejectedNotVerbatim,
+            usage: result.usage,
+            errors: result.errors,
           })
           return
         }

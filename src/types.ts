@@ -110,11 +110,42 @@ export interface MemoryItem {
 }
 
 /**
+ * 宿主 LLM 服务的切面（对应 @deepseek-ai/dsh-llm 的 `ctx.llm`）。
+ *
+ * 故意**不 import 官方包**，只声明我们真正调用的那几个字段——与
+ * dsh-whale-meter 同一策略：插件零运行时依赖，就不会被上游 rc 版本的
+ * 类型变动波及；真出问题也只坏在这一层，好定位。
+ */
+export interface LlmSlice {
+  stream(options: {
+    provider: string
+    model: string
+    messages: { id: string; role: 'user' | 'assistant'; content: { type: 'text'; text: string }[] }[]
+    system?: string
+    temperature?: number
+    maxTokens?: number
+    signal?: AbortSignal
+  }): AsyncIterable<LlmStreamChunk>
+}
+
+/** 我们只关心文本增量与用量两种 chunk，其余（reasoning/tool-call）一律忽略。 */
+export type LlmStreamChunk =
+  | { type: 'text-delta'; index: number; text: string }
+  | { type: 'usage'; usage: { inputTokens: number; outputTokens: number } }
+  | { type: string; [key: string]: unknown }
+
+/** 宿主当前默认模型（对应 `ctx.agentDefaultModel`）——借它就等于借用户已配好的 key。 */
+export interface DefaultModelSlice {
+  currentSelection(): { provider: string; model: string; reasoningEffort?: string }
+}
+
+/**
  * host 侧我们用到的 dsh 上下文切面。
  *
- * 形状与 dsh-whale-meter 一致（那份已在真实 dsh 上跑通），另加 `llm`：
- * 提纯直接借宿主已配好的 provider —— **用户不需要为本插件再配任何 key**，
- * 这是相对 MemoryHub 主库最大的体验优势。
+ * 形状与 dsh-whale-meter 一致（那份已在真实 dsh 上跑通），另加 `llm` 与
+ * `agentDefaultModel`：提纯直接借宿主已配好的 provider ——
+ * **用户不需要为本插件再配任何 key**，这是相对 MemoryHub 主库最大的体验优势。
+ * 两者都做成可选：宿主没挂载时降级为"只扫描不提纯"，而不是插件挂掉。
  */
 export interface HostContext {
   on(event: string, listener: (...args: any[]) => any): () => void
@@ -131,6 +162,8 @@ export interface HostContext {
       ) => void | Promise<void>
     }): () => void
   }
+  llm?: LlmSlice
+  agentDefaultModel?: DefaultModelSlice
 }
 
 /** 插件配置（cordis.yml 里可改，不硬编码任何部署相关取值）。 */

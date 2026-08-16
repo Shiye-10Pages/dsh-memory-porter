@@ -7,8 +7,11 @@
  *   npx tsx scripts/scan-local.ts [会话数上限]
  */
 import { countAvailable, scanClaudeCode } from '../src/connectors/index.ts'
+import { estimateCost } from '../src/cost.ts'
+import { renderConversation } from '../src/distill.ts'
 
 const limit = Number(process.argv[2] ?? 100)
+const model = process.argv[3] ?? 'deepseek-v4-flash'
 
 const total = await countAvailable()
 console.log(`本机可搬会话总数: ${total}`)
@@ -20,8 +23,18 @@ const chars = conversations.reduce((n, c) => n + c.turns.reduce((m, t) => m + t.
 
 console.log(`扫描 ${result.conversations} 个会话 / ${turns} 条消息（user ${users} · assistant ${turns - users}）`)
 console.log(`跳过非对话行 ${result.skipped} 条，解析失败 ${result.errors.length} 个文件`)
-console.log(`正文合计 ${chars.toLocaleString()} 字符（粗估 ≈ ${Math.round(chars / 1.6).toLocaleString()} tokens）`)
+console.log(`正文合计 ${chars.toLocaleString()} 字符`)
 for (const error of result.errors.slice(0, 5)) console.log(`  ! ${error.uri}: ${error.message}`)
+
+const estimate = estimateCost(conversations.map(c => renderConversation(c.turns)), model, Date.now())
+console.log(
+  `\n提纯预估（${estimate.model}）：输入 ${estimate.inputTokens.toLocaleString()} tokens`
+  + ` + 输出 ≈ ${estimate.outputTokens.toLocaleString()}`,
+)
+console.log(
+  `  现在跑 ¥${estimate.cny}（${estimate.repriced ? (estimate.peak ? '高峰时段' : '空闲时段') : '调价前平价'}）`
+  + `  ·  空闲时段跑 ¥${estimate.offPeakCny}`,
+)
 
 const sample = conversations[0]
 if (sample !== undefined) {
