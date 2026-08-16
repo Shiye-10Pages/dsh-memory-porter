@@ -87,9 +87,14 @@ function PortTab({
     { conversations: number; estimate: Estimate; modelSource: string } | undefined
   >()
   const [report, setReport] = useState<DistillReport | undefined>()
-  const [busy, setBusy] = useState<'' | 'local' | 'estimate' | 'distill'>('')
+  const [busy, setBusy] = useState<'' | 'local' | 'stats' | 'import' | 'estimate' | 'distill'>('')
   const [error, setError] = useState<string | undefined>()
   const [local, setLocal] = useState<{ userTurns: number; found: number } | undefined>()
+  const [stats, setStats] = useState<
+    { conversations: number; messages: number; userTurns: number; chars: number; earliest: string } | undefined
+  >()
+  const [importPath, setImportPath] = useState('')
+  const [imported, setImported] = useState<{ conversations: number; candidates: number } | undefined>()
   const [models, setModels] = useState<ModelChoice[]>([])
   /** 空串 = 跟随宿主默认；否则是 "provider::model"。 */
   const [pick, setPick] = useState('')
@@ -110,11 +115,17 @@ function PortTab({
     return provider !== undefined && model !== undefined ? { provider, model } : undefined
   }
 
-  const run = async (kind: 'local' | 'estimate' | 'distill'): Promise<void> => {
+  const run = async (kind: 'local' | 'stats' | 'import' | 'estimate' | 'distill'): Promise<void> => {
     setBusy(kind)
     setError(undefined)
     try {
-      if (kind === 'local') {
+      if (kind === 'stats') setStats(await api.stats())
+      else if (kind === 'import') {
+        const result = await api.importPath(importPath.trim())
+        const conversations = result.results.reduce((n, r) => n + r.conversations, 0)
+        setImported({ conversations, candidates: result.candidates })
+        onDone()
+      } else if (kind === 'local') {
         const result = await api.localScan()
         setLocal(result)
         onDone()
@@ -178,23 +189,85 @@ function PortTab({
         想更保守就切「逐条确认」。
       </div>
 
-      {/* 第一步永远是免费的那个：先让人看见自己说过的话，再谈花钱。 */}
-      <div className="mp-note" style={{ marginTop: 14 }}>
-        <b>先免费看一眼</b> —— 不用模型、不联网、不花一分钱，
-        直接从你本机的对话里把<b>你自己下过判断的原话</b>挑出来。
-      </div>
-      <div className="mp-actions">
-        <button className="mp-btn" disabled={busy !== ''} onClick={() => void run('local')}>
-          {busy === 'local' ? '扫描中…' : '🎁 本地扫描（免费·瞬时）'}
-        </button>
-      </div>
-      {local !== undefined && (
-        <div className="mp-note">
-          扫了你 <b>{local.userTurns}</b> 条发言，挑出 <b>{local.found}</b> 句你自己下过的判断
-          —— 全部在「待确认」页等你过目。
-          {local.found === 0 && ' 没匹配到显式的决断句式，用下面的模型提纯能挖得更深。'}
+      {/* ① 免费且情绪最强的那条路：抢救 Claude 对你的记忆。 */}
+      <div className="mp-lane">
+        <div className="mp-lane-head">
+          <span className="mp-lane-tag free">免费 · 瞬时</span>
+          <b>有 Claude / ChatGPT 的导出？拖进来</b>
         </div>
-      )}
+        <div className="mp-note" style={{ marginTop: 0 }}>
+          导出包里的 <code>memories.json</code> 是 <b>Claude 记着的关于你的一切</b>——
+          它已经是结论，<b>不过模型、不花一分钱</b>，直接进你的库。
+          而这份东西**号一没就彻底消失，别处重建不出来**。
+        </div>
+        <div className="mp-search" style={{ marginTop: 10 }}>
+          <input
+            className="mp-input"
+            placeholder="导出解压后的文件夹路径，或 conversations.json / memories.json"
+            value={importPath}
+            onChange={event => setImportPath(event.target.value)}
+            onKeyDown={event => {
+              if (event.key === 'Enter') void run('import')
+            }}
+          />
+          <button className="mp-btn" disabled={busy !== '' || importPath.trim() === ''} onClick={() => void run('import')}>
+            {busy === 'import' ? '导入中…' : '导入'}
+          </button>
+        </div>
+        {imported !== undefined && (
+          <div className="mp-note">
+            读到 <b>{imported.conversations}</b> 个会话；
+            <b>{imported.candidates}</b> 条 Claude 记忆已零成本进「待确认」页。
+            {imported.conversations > 0 && ' 会话本身还要用模型提纯才能变成记忆，见下。'}
+          </div>
+        )}
+      </div>
+
+      {/* ② 本机对话：先如实展示存量，再明码标价。 */}
+      <div className="mp-lane">
+        <div className="mp-lane-head">
+          <span className="mp-lane-tag">本机</span>
+          <b>没有导出？你硬盘上本来就还留着这些</b>
+        </div>
+        {stats === undefined
+          ? (
+              <div className="mp-actions">
+                <button className="mp-btn ghost" disabled={busy !== ''} onClick={() => void run('stats')}>
+                  {busy === 'stats' ? '统计中…' : '看看本机还剩多少（免费）'}
+                </button>
+              </div>
+            )
+          : (
+              <>
+                <div className="mp-cards" style={{ marginTop: 10 }}>
+                  <div className="mp-card hero">
+                    <div className="mp-card-label">你自己说过的话</div>
+                    <div className="mp-card-value">{stats.userTurns}</div>
+                    <div className="mp-card-hint">条，共 {stats.chars.toLocaleString()} 字</div>
+                  </div>
+                  <div className="mp-card">
+                    <div className="mp-card-label">会话 / 消息</div>
+                    <div className="mp-card-value">{stats.conversations}</div>
+                    <div className="mp-card-hint">{stats.messages} 条消息</div>
+                  </div>
+                  <div className="mp-card">
+                    <div className="mp-card-label">最早回到</div>
+                    <div className="mp-card-value" style={{ fontSize: 17 }}>{stats.earliest || '—'}</div>
+                    <div className="mp-card-hint">号没了，这些也还在</div>
+                  </div>
+                </div>
+                <button className="mp-linkish" disabled={busy !== ''} onClick={() => void run('local')}>
+                  {busy === 'local' ? '粗筛中…' : '顺手粗筛一遍显式决断句（免费，会漏很多）'}
+                </button>
+                {local !== undefined && (
+                  <div className="mp-note">
+                    粗筛只挑得到「我决定 / 以后都 / 不要再」这类显式句式，这次挑出 <b>{local.found}</b> 句。
+                    真正的结论多数是隐含的，得靠下面的模型提纯。
+                  </div>
+                )}
+              </>
+            )}
+      </div>
 
       {/* 用哪个模型 = 花多少钱，所以选择器就摆在算钱按钮旁边。 */}
       <div className="mp-actions">

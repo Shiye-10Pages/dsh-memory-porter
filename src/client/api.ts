@@ -84,6 +84,13 @@ export const api = {
   available: () => call<Available>('available'),
   queue: () => call<{ queue: MemoryView[] }>('queue'),
   memories: () => call<{ memories: MemoryView[] }>('memories'),
+  stats: () => call<{
+    conversations: number
+    messages: number
+    userTurns: number
+    chars: number
+    earliest: string
+  }>('stats', {}),
   localScan: () => call<{
     conversations: number
     userTurns: number
@@ -101,7 +108,11 @@ export const api = {
     ),
   distill: (pick?: { provider: string; model: string }) =>
     call<DistillReport>('distill', { ...pick, confirm: true }),
-  importPath: (path: string) => call<unknown>('import', { path }),
+  importPath: (path: string) => call<{
+    results: { source: string; conversations: number; turns: number; errors: unknown[] }[]
+    candidates: number
+    ingested?: { accepted: number; pending: number }
+  }>('import', { path }),
   decide: (id: string, decision: 'approved' | 'discarded') => call<Available>('decide', { id, decision }),
   recall: (query: string, topk = 6) =>
     call<{ count: number; hits: (MemoryView & { score: number })[] }>('recall', { query, topk }),

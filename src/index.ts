@@ -242,6 +242,38 @@ export function apply(ctx: HostContext, config: PorterConfig = {}): void {
           })
           return
         }
+        /**
+         * 本机存量统计：**零成本、零风险的第一屏**。
+         *
+         * 不假装提炼记忆，就如实告诉他硬盘上还剩多少东西、最早能回到哪天——
+         * 「号没了这些也还在」这句话，靠这几个数字自己站住。
+         */
+        if (pathname === '/memory-porter/api/stats') {
+          const conversations = await scanClaudeCode({
+            root: config.claudeCodeRoot,
+            limitConversations: 0,
+          })
+          let messages = 0
+          let userTurns = 0
+          let chars = 0
+          let earliest = ''
+          for (const conversation of conversations.conversations) {
+            for (const turn of conversation.turns) {
+              messages++
+              chars += turn.text.length
+              if (turn.role === 'user') userTurns++
+              if (turn.ts !== '' && (earliest === '' || turn.ts < earliest)) earliest = turn.ts
+            }
+          }
+          sendJson(res, 200, {
+            conversations: conversations.result.conversations,
+            messages,
+            userTurns,
+            chars,
+            earliest: earliest.slice(0, 10),
+          })
+          return
+        }
         // 扫描本机 Claude Code（免导出）。
         if (pathname === '/memory-porter/api/scan') {
           const body = (await readBody(req)) as { limit?: number }

@@ -71,6 +71,15 @@ export const css = `
 .mp-meta{margin-top:7px;font-size:11px;color:var(--dsw-alias-label-tertiary,#8f959e);font-variant-numeric:tabular-nums}
 .mp-item-actions{display:flex;gap:8px;margin-top:10px}
 
+/* 两条并列的入口：免费那条在上，花钱那条在下，各自框起来不互相干扰。 */
+.mp-lane{margin-top:14px;padding:12px 14px;border:1px solid var(--dsw-alias-border-l1,#e3e6eb);border-radius:12px}
+.mp-lane-head{display:flex;align-items:center;gap:8px;font-size:13px;flex-wrap:wrap}
+.mp-lane-tag{padding:2px 8px;border-radius:999px;font-size:10px;font-weight:700;background:var(--dsw-alias-interactive-bg-hover,#f2f4f7);color:var(--dsw-alias-label-secondary,#51565d)}
+.mp-lane-tag.free{background:rgba(52,163,101,.14);color:#2d8a56}
+.mp-lane code{padding:1px 5px;border-radius:4px;font-size:11px;background:var(--dsw-alias-interactive-bg-hover,#f2f4f7)}
+.mp-linkish{margin-top:10px;border:0;background:none;padding:0;font-size:12px;color:var(--dsw-alias-state-business-primary,#3370ff);cursor:pointer;text-decoration:underline}
+.mp-linkish:disabled{opacity:.5;cursor:default}
+
 .mp-field{display:flex;align-items:center;gap:8px;flex:1;min-width:220px}
 .mp-field-label{font-size:12px;font-weight:600;color:var(--dsw-alias-label-secondary,#51565d);white-space:nowrap}
 
