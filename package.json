@@ -63,5 +63,13 @@
     "tsdown": "^0.12.0",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Shiye-10Pages/dsh-memory-porter.git"
+  },
+  "homepage": "https://github.com/Shiye-10Pages/dsh-memory-porter#readme",
+  "bugs": {
+    "url": "https://github.com/Shiye-10Pages/dsh-memory-porter/issues"
   }
 }
