@@ -104,6 +104,7 @@ function PortTab({
   /** 空串 = 跟随宿主默认；否则是 "provider::model"。 */
   const [pick, setPick] = useState('')
   const [defaultLabel, setDefaultLabel] = useState<string | undefined>()
+  const [ticks, setTicks] = useState<{ done: number; total: number } | undefined>()
 
   useEffect(() => {
     void api.models()
@@ -113,6 +114,23 @@ function PortTab({
       })
       .catch(() => undefined)
   }, [])
+
+  // 提纯是分块跑的长任务（实测 7 个会话近 5 分钟），跑的时候轮询进度，
+  // 否则用户面对一个不动的「正在搬…」会以为卡死。
+  useEffect(() => {
+    if (busy !== 'distill') {
+      setTicks(undefined)
+      return
+    }
+    const timer = setInterval(() => {
+      void api.progress()
+        .then(p => {
+          if (p.total > 0) setTicks({ done: p.done, total: p.total })
+        })
+        .catch(() => undefined)
+    }, 2000)
+    return () => clearInterval(timer)
+  }, [busy])
 
   const picked = (): { provider: string; model: string } | undefined => {
     if (pick === '') return undefined
@@ -292,6 +310,13 @@ function PortTab({
           {busy === 'distill' ? t('run.distillBusy') : t('run.distill')}
         </button>
       </div>
+
+      {busy === 'distill' && ticks !== undefined && (
+        <div className="mp-note">
+          <div className="mp-progress"><i style={{ width: `${Math.round(ticks.done / ticks.total * 100)}%` }} /></div>
+          {t('run.progress', { done: ticks.done, total: ticks.total })}
+        </div>
+      )}
 
       {estimate !== undefined && (
         <div className="mp-alert">

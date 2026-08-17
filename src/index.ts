@@ -63,6 +63,13 @@ export function apply(ctx: HostContext, config: PorterConfig = {}): void {
     return index
   }
 
+  /**
+   * 提纯进度。真实跑一遍：7 个会话花了 4 分 51 秒，而面板期间只显示「正在搬…」——
+   * 按默认上限 100 个会话推算要跑一小时，用户会以为卡死了。
+   * `distill()` 本来就有 onProgress 回调，这里把它接出来给面板轮询。
+   */
+  let progress: { done: number; total: number; running: boolean } = { done: 0, total: 0, running: false }
+
   /** 过闸 + 落盘。候选来自提纯，或来自 Claude 云端记忆这类直采源。 */
   async function ingest(candidates: readonly Candidate[], byLlm: boolean) {
     const result = gate(candidates, {
@@ -184,6 +191,11 @@ export function apply(ctx: HostContext, config: PorterConfig = {}): void {
         if (pathname === '/memory-porter/api/available') {
           const total = await countAvailable(config.claudeCodeRoot)
           sendJson(res, 200, { claudeCode: total, scanLimit, ...store.summary() }, headOnly)
+          return
+        }
+        // 提纯进行中的进度，供面板轮询。
+        if (pathname === '/memory-porter/api/progress') {
+          sendJson(res, 200, progress, headOnly)
           return
         }
         if (pathname === '/memory-porter/api/queue') {
@@ -339,11 +351,21 @@ export function apply(ctx: HostContext, config: PorterConfig = {}): void {
             return
           }
           const conversations = await collectConversations(body)
-          const result = await distill(conversations, {
-            llm: resolved.llm,
-            provider: resolved.provider,
-            model: resolved.model,
-          })
+          progress = { done: 0, total: 0, running: true }
+          let result
+          try {
+            result = await distill(conversations, {
+              llm: resolved.llm,
+              provider: resolved.provider,
+              model: resolved.model,
+              onProgress: (done, total) => {
+                progress = { done, total, running: true }
+              },
+            })
+          } finally {
+            // 无论成功失败都要停下来，否则面板会一直转圈。
+            progress = { ...progress, running: false }
+          }
           const ingested = await ingest(result.candidates, true)
           sendJson(res, 200, {
             conversations: conversations.length,

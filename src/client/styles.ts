@@ -80,6 +80,9 @@ export const css = `
 .mp-linkish{margin-top:10px;border:0;background:none;padding:0;font-size:12px;color:var(--dsw-alias-state-business-primary,#3370ff);cursor:pointer;text-decoration:underline}
 .mp-linkish:disabled{opacity:.5;cursor:default}
 
+.mp-progress{height:6px;border-radius:999px;background:var(--dsw-alias-interactive-bg-hover,#f2f4f7);overflow:hidden;margin-bottom:8px}
+.mp-progress i{display:block;height:100%;border-radius:999px;background:var(--dsw-alias-state-business-primary,#3370ff);transition:width .4s ease}
+
 .mp-field{display:flex;align-items:center;gap:8px;flex:1;min-width:220px}
 .mp-field-label{font-size:12px;font-weight:600;color:var(--dsw-alias-label-secondary,#51565d);white-space:nowrap}
 

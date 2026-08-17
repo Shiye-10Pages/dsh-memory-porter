@@ -85,6 +85,7 @@ export const api = {
   available: () => call<Available>('available'),
   queue: () => call<{ queue: MemoryView[] }>('queue'),
   memories: () => call<{ memories: MemoryView[] }>('memories'),
+  progress: () => call<{ done: number; total: number; running: boolean }>('progress'),
   stats: () => call<{
     conversations: number
     messages: number
