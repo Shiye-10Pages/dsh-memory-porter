@@ -60,11 +60,17 @@
   .ev { border-left:3px solid #4a8dff; border-radius:0 10px 10px 0;
         background:rgba(74,141,255,.09); padding:13px 15px;
         font-size:16px; line-height:1.6; color:#dfeaff; }
-  .meta { margin-top:16px; font-size:13px; color:rgba(160,188,228,.66);
+  .meta { margin-top:14px; font-size:13px; color:rgba(160,188,228,.66);
           font-variant-numeric:tabular-nums; }
-  .verify { margin-top:18px; padding-top:16px; border-top:1px solid rgba(140,175,230,.18);
+  .verify { margin-top:16px; padding-top:15px; border-top:1px solid rgba(140,175,230,.18);
             display:flex; align-items:center; gap:9px; font-size:14px; color:#7fe0ab; font-weight:600; }
   .verify .ok { font-size:16px; }
+  /* 实测数字：抽象承诺变成可验证的证据，这是整张图最该被记住的地方。 */
+  .proof { margin-top:14px; padding:12px 14px; border-radius:12px;
+           background:rgba(232,138,42,.12); border:1px solid rgba(232,138,42,.3); }
+  .proof .n { font-size:15px; font-weight:800; color:#ffb765; line-height:1.5; }
+  .proof .n b { font-size:22px; }
+  .proof .s { margin-top:5px; font-size:12px; color:rgba(255,200,150,.72); line-height:1.5; }
 </style>
 </head>
 <body>
@@ -110,6 +116,10 @@
     <div class="ev">我决定这个插件用 MIT 协议发布，主库继续 PolyForm。</div>
     <div class="meta">来源 claude-web · 置信度 0.45 · 2026-08-16 起</div>
     <div class="verify"><span class="ok">✓</span><span>证据已回原文逐字核对</span></div>
+    <div class="proof">
+      <div class="n">真实跑一遍：模型提 25 条，<b>挡掉 6 条</b></div>
+      <div class="s">每四条里就有一条是转述而非引用 —— 只信模型自述的实现里，这 6 条会原样入库。</div>
+    </div>
   </div>
 </div>
 </body>
