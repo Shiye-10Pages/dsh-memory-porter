@@ -6,6 +6,8 @@
 
 [English](README.en.md) · 社区插件，与 DeepSeek 官方无关。
 
+![记忆搬家](assets/social-preview.png)
+
 ---
 
 ## 这个插件解决什么

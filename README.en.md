@@ -7,6 +7,8 @@ every memory carries verbatim evidence, and you approve them one by one.
 
 [中文](README.md) · Community plugin, not affiliated with DeepSeek.
 
+![Memory Porter](assets/social-preview.png)
+
 ---
 
 ## What this solves

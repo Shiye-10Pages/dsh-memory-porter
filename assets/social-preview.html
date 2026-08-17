@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<!--
+  social preview 源文件。改完用 headless Chrome 重渲染：
+
+  cd assets && "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+    --headless --disable-gpu --hide-scrollbars --force-device-scale-factor=2 \
+    --window-size=1280,640 --screenshot=social-preview@2x.png \
+    "file://$PWD/social-preview.html"
+
+  配色与 dsh-whale-meter 同一套，让两个插件在生态里看起来是一家出的。
+  右侧那张卡片刻意画成一条真实记忆——带逐字证据和入库依据，
+  因为那正是这个插件跟别家唯一说得清的区别。
+-->
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { width:1280px; height:640px; overflow:hidden;
+         font-family:"PingFang SC","Hiragino Sans GB",-apple-system,sans-serif; }
+  .wrap { position:relative; width:1280px; height:640px;
+          background:linear-gradient(135deg,#0a1424 0%,#0f2547 55%,#123061 100%);
+          display:flex; align-items:center; padding:0 60px; gap:44px; }
+  .ripple { position:absolute; border:1.5px solid rgba(120,170,255,.09); border-radius:50%; }
+  .dot { position:absolute; background:rgba(180,210,255,.35); border-radius:50%; }
+
+  .left { position:relative; z-index:2; width:700px; }
+  .brand { display:flex; align-items:center; gap:14px; margin-bottom:10px; }
+  .brand .box { font-size:50px; line-height:1; }
+  .brand h1 { font-size:50px; font-weight:800; color:#fff; letter-spacing:-.5px; }
+  .en { font-size:19px; color:rgba(160,190,235,.72); font-weight:600;
+        letter-spacing:.3px; margin-bottom:20px; }
+  .tag { display:inline-block; padding:5px 13px; border-radius:999px; font-size:15px; font-weight:600;
+         background:rgba(80,140,255,.16); color:#8fd0ff; border:1px solid rgba(120,175,255,.3);
+         margin-bottom:18px; }
+  .lead { font-size:25px; line-height:1.5; color:#e8f0ff; font-weight:700; margin-bottom:24px;
+          max-width:660px; }
+  .lead b { color:#8fd0ff; }
+  .feats { display:flex; flex-direction:column; gap:11px; }
+  .feat { display:flex; align-items:center; gap:11px; font-size:18px; color:rgba(205,222,247,.9); }
+  .feat i { width:7px; height:7px; border-radius:50%; background:#4a8dff; flex:none;
+            box-shadow:0 0 10px rgba(74,141,255,.8); }
+  .feat b { color:#fff; font-weight:700; }
+  .foot { margin-top:30px; display:flex; align-items:center; gap:14px; }
+  .foot .repo { font-family:ui-monospace,Menlo,monospace; font-size:17px; color:rgba(175,200,240,.8); }
+  .foot .mit { font-size:14px; color:rgba(150,180,225,.55); padding:3px 9px;
+               border:1px solid rgba(140,175,230,.25); border-radius:6px; }
+
+  /* 右侧：一条真实记忆的样子 */
+  .card { position:relative; z-index:2; width:412px; border-radius:22px;
+          background:linear-gradient(160deg,#0d1c33 0%,#12305e 100%);
+          border:1px solid rgba(120,170,255,.22); padding:28px 28px 26px;
+          box-shadow:0 24px 70px rgba(0,0,0,.45); transform:rotate(2.5deg); }
+  .chips { display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap; }
+  .chip { padding:3px 10px; border-radius:999px; font-size:12px; font-weight:700; }
+  .chip.type { background:rgba(140,175,230,.16); color:rgba(205,225,255,.9); }
+  .chip.auto { background:rgba(52,163,101,.2); color:#7fe0ab; }
+  .claim { font-size:23px; line-height:1.4; font-weight:700; color:#fff; margin-bottom:16px; }
+  .ev-label { font-size:12px; color:rgba(160,190,235,.62); margin-bottom:7px; letter-spacing:.4px; }
+  .ev { border-left:3px solid #4a8dff; border-radius:0 10px 10px 0;
+        background:rgba(74,141,255,.09); padding:13px 15px;
+        font-size:16px; line-height:1.6; color:#dfeaff; }
+  .meta { margin-top:16px; font-size:13px; color:rgba(160,188,228,.66);
+          font-variant-numeric:tabular-nums; }
+  .verify { margin-top:18px; padding-top:16px; border-top:1px solid rgba(140,175,230,.18);
+            display:flex; align-items:center; gap:9px; font-size:14px; color:#7fe0ab; font-weight:600; }
+  .verify .ok { font-size:16px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="ripple" style="width:120px;height:120px;right:-10px;top:-30px"></div>
+  <div class="ripple" style="width:260px;height:260px;right:-70px;top:-100px"></div>
+  <div class="ripple" style="width:420px;height:420px;right:-140px;top:-180px"></div>
+  <div class="dot" style="width:4px;height:4px;left:120px;top:88px"></div>
+  <div class="dot" style="width:3px;height:3px;left:250px;top:56px"></div>
+  <div class="dot" style="width:5px;height:5px;left:70px;bottom:96px;opacity:.5"></div>
+  <div class="dot" style="width:3px;height:3px;left:600px;bottom:60px;opacity:.4"></div>
+
+  <div class="left">
+    <div class="brand">
+      <span class="box">📦</span>
+      <h1>记忆搬家</h1>
+    </div>
+    <div class="en">Memory&nbsp;Porter · a DeepSeek Harness plugin</div>
+    <span class="tag">跨厂商记忆迁移</span>
+    <div class="lead">
+      号可以没，<b>记忆不能没</b>。<br>
+      把锁在 Claude / ChatGPT 账号里的历史，搬进 DSH。
+    </div>
+    <div class="feats">
+      <div class="feat"><i></i><span><b>memories.json 零 token</b> —— Claude 记着的关于你的一切，直接进库</span></div>
+      <div class="feat"><i></i><span>逐字证据<b>由代码回原文核对</b>，核不上就丢，并告诉你丢了几条</span></div>
+      <div class="feat"><i></i><span>本机 <code>~/.claude/projects</code> 免导出直读</span></div>
+      <div class="feat"><i></i><span>不用配 key，数据全在本机</span></div>
+    </div>
+    <div class="foot">
+      <span class="repo">dsh plugin add dsh-memory-porter</span>
+      <span class="mit">MIT</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="chips">
+      <span class="chip type">决策</span>
+      <span class="chip auto">自动入库 · 置信达标</span>
+    </div>
+    <div class="claim">插件用 MIT 协议发布，主库继续 PolyForm</div>
+    <div class="ev-label">逐字证据</div>
+    <div class="ev">我决定这个插件用 MIT 协议发布，主库继续 PolyForm。</div>
+    <div class="meta">来源 claude-web · 置信度 0.45 · 2026-08-16 起</div>
+    <div class="verify"><span class="ok">✓</span><span>证据已回原文逐字核对</span></div>
+  </div>
+</div>
+</body>
+</html>
