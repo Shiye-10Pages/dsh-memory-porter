@@ -71,9 +71,20 @@ const SYSTEM_PROMPT = `你是一个记忆提炼器。用户会给你一段他与
 
 没有任何值得记的，就输出 []。`
 
-/** 把会话渲染成喂给模型的纯文本，同时作为逐字校验的比对基准。 */
+/** 把会话渲染成喂给模型的纯文本（含 AI 发言，模型需要上下文才能提炼）。 */
 export function renderConversation(turns: readonly { role: string; text: string }[]): string {
   return turns.map(t => `${t.role === 'user' ? '用户' : 'AI'}：${t.text}`).join('\n\n')
+}
+
+/**
+ * 只把**用户自己说的话**拼起来——逐字校验的第一基准。
+ *
+ * 为什么要单独有这个：真实跑一遍发现，**18 条入库记忆里有 8 条的证据其实
+ * 出自 AI 的发言**。逐字闸没坏，它确实在原文里找到了那句话——但「原文」
+ * 包含 AI 的回复，而产品承诺的是「你说过的话」。两者不是一回事。
+ */
+export function renderUserTurns(turns: readonly { role: string; text: string }[]): string {
+  return turns.filter(t => t.role === 'user').map(t => t.text).join('\n\n')
 }
 
 /**
@@ -129,19 +140,39 @@ export function isVerbatim(evidence: string, source: string): boolean {
   return normalize(source).includes(needle)
 }
 
-/** 把模型返回的一项转成候选；任何一步不合格就返回 undefined（宁可丢掉）。 */
-export function toCandidate(item: unknown, source: SourcePointer, sourceText: string): Candidate | undefined {
+/**
+ * 把模型返回的一项转成候选；任何一步不合格就返回 undefined（宁可丢掉）。
+ *
+ * **证据分两级**：
+ * - 逐字出现在**用户自己的发言**里 → 正常候选，走常规闸；
+ * - 只出现在 **AI 的回复**里 → 仍然收，但标 `forceReview`，进人工闸。
+ *   这类多半是 AI 在准确复述用户（"你的主要收入来源是…"），有真价值，
+ *   但它是**归纳而非原话**，性质等同 `memories.json`，不该悄悄自动入库。
+ * - 两边都对不上 → 模型编的，丢掉。
+ */
+export function toCandidate(
+  item: unknown,
+  source: SourcePointer,
+  sourceText: string,
+  userText = sourceText,
+): Candidate | undefined {
   if (item === null || typeof item !== 'object') return undefined
   const record = item as Record<string, unknown>
   const claim = typeof record.claim === 'string' ? record.claim.trim() : ''
   const evidence = typeof record.evidence === 'string' ? record.evidence.trim() : ''
   if (claim === '' || evidence === '') return undefined
-  if (!isVerbatim(evidence, sourceText)) return undefined
+
+  const saidByUser = isVerbatim(evidence, userText)
+  if (!saidByUser && !isVerbatim(evidence, sourceText)) return undefined
 
   const type = normalizeType(typeof record.type === 'string' ? record.type : '')
-  const context = typeof record.context === 'string' && record.context.trim() !== ''
+  const given = typeof record.context === 'string' && record.context.trim() !== ''
     ? record.context.trim()
     : undefined
+  // 证据来自 AI 时把这件事写进 context，用户在队列里一眼能看见。
+  const context = saidByUser
+    ? given
+    : [given, '证据出自 AI 的复述，不是你的原话'].filter(Boolean).join(' · ')
 
   return {
     type,
@@ -150,8 +181,7 @@ export function toCandidate(item: unknown, source: SourcePointer, sourceText: st
     context,
     source,
     impact: record.impact === true,
-    // 提纯出来的都是逐字证据支撑的候选，人工闸由 gate 按影响与置信度决定。
-    forceReview: false,
+    forceReview: !saidByUser,
   }
 }
 
@@ -162,6 +192,8 @@ export interface DistillResult {
   usage: { inputTokens: number; outputTokens: number }
   /** 逐字校验没通过而被丢掉的条数——这个数字要显示给用户看，它证明闸门在工作。 */
   rejectedNotVerbatim: number
+  /** 证据只在 AI 回复里找到、因而被推进人工闸的条数。 */
+  fromAssistant: number
   errors: { uri: string; message: string }[]
 }
 
@@ -226,12 +258,14 @@ export async function distill(
     candidates: [],
     usage: { inputTokens: 0, outputTokens: 0 },
     rejectedNotVerbatim: 0,
+    fromAssistant: 0,
     errors: [],
   }
   let done = 0
 
   const parts = await mapLimit(jobs, concurrency, async job => {
     const sourceText = renderConversation(job.turns)
+    const userText = renderUserTurns(job.turns)
     const source: SourcePointer = {
       source: job.conversation.source,
       convId: job.conversation.convId,
@@ -254,16 +288,21 @@ export async function distill(
       }))
       const candidates: Candidate[] = []
       let rejected = 0
+      let fromAssistant = 0
       for (const item of extractJsonArray(text)) {
-        const candidate = toCandidate(item, source, sourceText)
+        const candidate = toCandidate(item, source, sourceText, userText)
         if (candidate === undefined) rejected++
-        else candidates.push(candidate)
+        else {
+          if (candidate.forceReview) fromAssistant++
+          candidates.push(candidate)
+        }
       }
-      return { candidates, rejected, inputTokens, outputTokens, error: undefined }
+      return { candidates, rejected, fromAssistant, inputTokens, outputTokens, error: undefined }
     } catch (error) {
       return {
         candidates: [],
         rejected: 0,
+        fromAssistant: 0,
         inputTokens: 0,
         outputTokens: 0,
         error: { uri: job.conversation.uri ?? job.conversation.convId, message: String(error) },
@@ -277,6 +316,7 @@ export async function distill(
   for (const part of parts) {
     result.candidates.push(...part.candidates)
     result.rejectedNotVerbatim += part.rejected
+    result.fromAssistant += part.fromAssistant
     result.usage.inputTokens += part.inputTokens
     result.usage.outputTokens += part.outputTokens
     if (part.error !== undefined) result.errors.push(part.error)

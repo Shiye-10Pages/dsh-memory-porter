@@ -66,6 +66,7 @@ export const zh = {
   'estimate.outbound': ' —— 提纯会把对话原文发给你在 DSH 里配置的模型服务商。',
   'report.line': '搬完了（用的 {model}）：从 {conversations} 个会话提炼出 {candidates} 条候选，自动入库 {accepted} 条、待你确认 {pending} 条。',
   'report.blocked': ' 其中 {count} 条因为对不上原文被挡掉了 —— 证据必须逐字出现在你说过的话里，模型转述的一律不要。',
+  'report.fromAssistant': ' 另有 {count} 条的证据出自 AI 的复述而非你的原话 —— 已全部推进「待确认」，不自动入库。',
   'report.errors': ' 另有 {count} 个会话解析失败。',
   'error.line': '出错了：{message}',
 
@@ -161,6 +162,7 @@ export const en: Record<keyof typeof zh, string> = {
   'estimate.outbound': ' — distillation sends your conversation text to the provider configured in DSH.',
   'report.line': 'Done (via {model}): {candidates} candidates from {conversations} conversations — {accepted} stored automatically, {pending} awaiting your review.',
   'report.blocked': ' {count} were rejected because they did not match the source text — evidence must appear verbatim in what you actually said; paraphrase never counts.',
+  'report.fromAssistant': ' {count} more were backed by the AI\'s restatement rather than your own words — all pushed to Pending, never stored automatically.',
   'report.errors': ' {count} conversations failed to parse.',
   'error.line': 'Something went wrong: {message}',
 

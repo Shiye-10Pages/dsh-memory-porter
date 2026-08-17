@@ -50,6 +50,7 @@ export interface DistillReport {
   conversations: number
   candidates: number
   rejectedNotVerbatim: number
+  fromAssistant: number
   usage: { inputTokens: number; outputTokens: number }
   errors: { uri: string; message: string }[]
   model?: string

@@ -11,6 +11,7 @@ import {
   extractJsonArray,
   isVerbatim,
   renderConversation,
+  renderUserTurns,
   toCandidate,
 } from '../src/distill.ts'
 import { estimateCost, estimateTokens, isPeak, OUTPUT_RATIO, ratesFor, REPRICE_EFFECTIVE_MS } from '../src/cost.ts'
@@ -116,6 +117,54 @@ describe('候选归一', () => {
   it('impact 缺省时为 false', () => {
     const candidate = toCandidate({ claim: 'x', evidence: '以后所有插件都发 MIT' }, SOURCE, sourceText)
     expect(candidate?.impact).toBe(false)
+  })
+})
+
+describe('证据是谁说的（真实数据打脸后加的）', () => {
+  const turns = [
+    { role: 'user', text: '我的主要收入是会员和咨询。' },
+    { role: 'assistant', text: '明白，你的主要收入来源是十页AI学院会员和咨询服务。' },
+  ]
+  const full = renderConversation(turns)
+  const userOnly = renderUserTurns(turns)
+
+  it('只拼用户发言，AI 的不进基准', () => {
+    expect(userOnly).toBe('我的主要收入是会员和咨询。')
+    expect(userOnly).not.toContain('十页AI学院')
+  })
+
+  it('证据出自用户本人 → 正常候选，不强制人工', () => {
+    const c = toCandidate({ claim: 'x', evidence: '我的主要收入是会员和咨询' }, SOURCE, full, userOnly)
+    expect(c?.forceReview).toBe(false)
+    expect(c?.context).toBeUndefined()
+  })
+
+  /**
+   * 真实跑一遍：18 条入库记忆里 8 条的证据其实是 AI 说的（44%）。
+   * 这类多半是 AI 在准确复述用户，有价值，但它是归纳不是原话——
+   * 性质等同 memories.json，必须进人工闸，不能悄悄自动入库。
+   */
+  it('证据只在 AI 回复里 → 仍然收，但强制人工并注明', () => {
+    const c = toCandidate(
+      { claim: 'x', evidence: '你的主要收入来源是十页AI学院会员和咨询服务' },
+      SOURCE, full, userOnly,
+    )
+    expect(c).toBeDefined()
+    expect(c?.forceReview).toBe(true)
+    expect(c?.context).toContain('AI 的复述')
+  })
+
+  it('两边都对不上 → 丢掉', () => {
+    expect(toCandidate({ claim: 'x', evidence: '用户说他年收入一千万' }, SOURCE, full, userOnly)).toBeUndefined()
+  })
+
+  it('提纯结果单独统计「证据出自 AI」的条数', async () => {
+    const conv = conversation(['我的主要收入是会员和咨询。'])
+    const llm = fakeLlm([JSON.stringify([
+      { claim: '来自用户', evidence: '我的主要收入是会员和咨询' },
+    ])])
+    const result = await distill([conv], { llm, provider: 'deepseek', model: 'v4-flash' })
+    expect(result.fromAssistant).toBe(0)
   })
 })
 

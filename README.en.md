@@ -86,6 +86,9 @@ tool directly; retrieval is fully local (BM25, no embedding model needed).
 1. **No verbatim evidence, no entry.** Every memory must carry the original text — and the
    evidence is **checked against the source by code**, not taken on the model's word. If it
    doesn't match, it's dropped, and you're told how many were dropped.
+   Evidence comes in two tiers: matched against **your own messages** it takes the normal path;
+   found only in **the AI's replies** (usually the AI accurately restating you) it is still kept
+   but **always pushed to Pending** and labelled — that is a restatement, not your own words.
 2. **Nothing AI-inferred lands automatically.** Claude's cloud memory is the model's summary
    of you, not your own words, so all of it goes to the review queue.
 3. **Your data stays on your machine.** The library is JSONL under `~/.dsh/memory-porter/` —

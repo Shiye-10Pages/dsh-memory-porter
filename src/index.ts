@@ -349,6 +349,7 @@ export function apply(ctx: HostContext, config: PorterConfig = {}): void {
             conversations: conversations.length,
             candidates: result.candidates.length,
             rejectedNotVerbatim: result.rejectedNotVerbatim,
+            fromAssistant: result.fromAssistant,
             usage: result.usage,
             errors: result.errors,
             ingested,

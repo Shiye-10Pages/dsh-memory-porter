@@ -318,6 +318,7 @@ function PortTab({
             pending: report.ingested?.pending ?? 0,
           })}
           {report.rejectedNotVerbatim > 0 && t('report.blocked', { count: report.rejectedNotVerbatim })}
+          {report.fromAssistant > 0 && t('report.fromAssistant', { count: report.fromAssistant })}
           {report.errors.length > 0 && t('report.errors', { count: report.errors.length })}
         </div>
       )}
