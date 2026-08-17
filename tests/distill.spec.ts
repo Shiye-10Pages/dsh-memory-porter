@@ -13,7 +13,7 @@ import {
   renderConversation,
   toCandidate,
 } from '../src/distill.ts'
-import { estimateCost, estimateTokens, isPeak, ratesFor, REPRICE_EFFECTIVE_MS } from '../src/cost.ts'
+import { estimateCost, estimateTokens, isPeak, OUTPUT_RATIO, ratesFor, REPRICE_EFFECTIVE_MS } from '../src/cost.ts'
 import type { LlmStreamSlice, RawConversation, SourcePointer } from '../src/types.ts'
 
 const SOURCE: SourcePointer = { source: 'claude-code', convId: 'C1' }
@@ -259,5 +259,24 @@ describe('成本预估', () => {
     expect(estimate.repriced).toBe(true)
     expect(estimate.offPeakCny).toBeLessThan(estimate.cny)
     expect(estimate.inputTokens).toBe(6000)
+  })
+
+  /**
+   * ⚠️ 实测校准，勿凭直觉改回去。
+   * 真实跑一遍（Claude 网页导出 7 会话）：输入 57,225 → 输出 38,522 = 67%。
+   * 原先按 8% 估，最终报价低估一倍多。提纯要逐字抄回证据，输出天然很大。
+   */
+  it('输出按输入的 70% 估 —— 这是实测出来的，不是拍的', () => {
+    expect(OUTPUT_RATIO).toBe(0.7)
+    const estimate = estimateCost(['中'.repeat(10_000)], 'v4-flash', OFF_PEAK)
+    expect(estimate.outputTokens).toBe(Math.ceil(estimate.inputTokens * 0.7))
+  })
+
+  it('对真实那一轮的报价不再低于实际收费', () => {
+    // 实际：输入 57,225 · 输出 38,522 · 空闲 flash（未命中 1.5 / 输出 4.5）
+    const actual = (57_225 * 1.5 + 38_522 * 4.5) / 1_000_000
+    // 用实测输入量反推报价，应当 ≥ 实际。
+    const quoted = (57_225 * 1.5 + Math.ceil(57_225 * OUTPUT_RATIO) * 4.5) / 1_000_000
+    expect(quoted).toBeGreaterThanOrEqual(actual)
   })
 })

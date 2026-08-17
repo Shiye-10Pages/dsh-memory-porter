@@ -108,9 +108,24 @@ export function estimateTokens(text: string): number {
   return Math.ceil(cjk * 0.6 + (total - cjk) * 0.3)
 }
 
+/**
+ * 输出 tokens 相对输入的比例。
+ *
+ * **这个数是实测校准出来的，不要凭直觉改。** 一开始按「摘要类任务输出远小于
+ * 输入」拍了 8%，真实跑一遍（Claude 网页导出 7 个会话）实测是 **67%**——
+ * 差 8 倍，最终报价低估了一倍多。
+ *
+ * 原因：提纯要求模型**逐字抄回证据**，而证据本身就是长文本。这不是「长进短出」
+ * 的摘要，是「长进也长出」。取 0.7 略高于实测值，宁可报高不可报低——
+ * 一个主打明码标价的功能，报价低于实际收费是最伤的。
+ *
+ * 实测记录：输入 57,225 → 输出 38,522（2026-08-17，deepseek-v4-flash）。
+ */
+export const OUTPUT_RATIO = 0.7
+
 export interface CostEstimate {
   inputTokens: number
-  /** 提纯的输出远小于输入，按输入的 8% 估。 */
+  /** 按 {@link OUTPUT_RATIO} 估算的输出量。 */
   outputTokens: number
   /** 人民币，现算 */
   cny: number
@@ -125,7 +140,7 @@ export interface CostEstimate {
 /** 估一次提纯要花多少钱。`atMs` 由调用方传入，便于测试与「如果半夜跑」对比。 */
 export function estimateCost(texts: readonly string[], model: string, atMs: number): CostEstimate {
   const inputTokens = texts.reduce((sum, text) => sum + estimateTokens(text), 0)
-  const outputTokens = Math.ceil(inputTokens * 0.08)
+  const outputTokens = Math.ceil(inputTokens * OUTPUT_RATIO)
   const price = (rates: Rates): number =>
     Math.round(((inputTokens * rates.miss + outputTokens * rates.out) / 1_000_000) * 10_000) / 10_000
 
