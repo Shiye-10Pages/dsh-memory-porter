@@ -1,15 +1,17 @@
 /**
- * 会话头部的入口按钮。
+ * 会话头部的入口徽章（次要入口）。
  *
- * 徽章上那个数字本身就是钩子——「你还有 1,247 个对话没搬」。
- * 有待确认条目时挂一个小红点，点开是完整面板。
+ * 主入口在侧边栏底部——搬家是装完插件的第一个动作，那时还没有会话。
+ * 这里是搬完之后在对话里随手看一眼记忆库用的。
  */
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { api, type Available } from './api.ts'
 import { Panel } from './Panel.tsx'
+import { makeT, TranslateContext } from './t.ts'
 
-export function PorterAction(): React.JSX.Element | null {
+export function PorterAction(props: Record<string, unknown>): React.JSX.Element | null {
+  const t = makeT(props.t)
   const [available, setAvailable] = useState<Available | undefined>(undefined)
   const [open, setOpen] = useState(false)
 
@@ -31,11 +33,11 @@ export function PorterAction(): React.JSX.Element | null {
   if (total === 0) return null
 
   return (
-    <>
+    <TranslateContext.Provider value={t}>
       <button
         type="button"
         className="mp-chip"
-        title={`记忆搬家：本机 ${available.claudeCode} 个会话可搬 · 已入库 ${available.memories} 条 · ${available.pending} 条待确认`}
+        title={t('chip.title', { count: available.claudeCode })}
         onClick={() => setOpen(true)}
       >
         <span>📦</span>
@@ -44,6 +46,6 @@ export function PorterAction(): React.JSX.Element | null {
       </button>
       {open && typeof document !== 'undefined'
         && createPortal(<Panel onClose={() => setOpen(false)} />, document.body)}
-    </>
+    </TranslateContext.Provider>
   )
 }

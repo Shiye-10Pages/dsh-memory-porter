@@ -11,9 +11,11 @@ import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { api, type Available } from './api.ts'
 import { Panel } from './Panel.tsx'
+import { makeT, TranslateContext } from './t.ts'
 
 export function SidebarEntry(props: Record<string, unknown>): React.JSX.Element {
   const wide = props.wide !== false
+  const t = makeT(props.t)
   const [available, setAvailable] = useState<Available | undefined>(undefined)
   const [open, setOpen] = useState(false)
 
@@ -31,20 +33,21 @@ export function SidebarEntry(props: Record<string, unknown>): React.JSX.Element 
 
   const portable = available?.claudeCode ?? 0
   const pending = available?.pending ?? 0
-  const hint = available === undefined
-    ? '记忆搬家'
-    : `记忆搬家 · 本机 ${portable} 个会话可搬${pending > 0 ? ` · ${pending} 条待确认` : ''}`
+  const title = t('side.title', {
+    portable,
+    pending: pending > 0 ? t('side.pending', { count: pending }) : '',
+  })
 
   return (
-    <>
-      <button type="button" className="mp-side" title={hint} onClick={() => setOpen(true)}>
+    <TranslateContext.Provider value={t}>
+      <button type="button" className="mp-side" title={title} onClick={() => setOpen(true)}>
         <span className="mp-side-icon">📦</span>
-        {wide && <span className="mp-side-label">记忆搬家</span>}
+        {wide && <span className="mp-side-label">{t('side.label')}</span>}
         {wide && portable > 0 && <span className="mp-side-count">{portable}</span>}
         {pending > 0 && <span className="mp-chip-dot" />}
       </button>
       {open && typeof document !== 'undefined'
         && createPortal(<Panel onClose={() => setOpen(false)} />, document.body)}
-    </>
+    </TranslateContext.Provider>
   )
 }

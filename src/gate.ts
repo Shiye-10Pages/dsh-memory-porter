@@ -218,17 +218,31 @@ export function decideGate(input: {
   mode: ReviewMode
 }): GateReason {
   const { candidate, confidence: score, hasConflict, mode } = input
-  if (candidate.forceReview) return '待确认·AI 推断'
-  if (hasConflict) return '待确认·与已有记忆冲突'
-  if (isHighImpact(candidate)) return '待确认·高影响'
-  if (mode === 'strict') return '待确认·你选择了逐条确认'
-  if (mode === 'trusting') return '自动入库·置信达标'
-  return score < LOW_CONFIDENCE ? '待确认·置信不足' : '自动入库·置信达标'
+  if (candidate.forceReview) return 'human-ai-inferred'
+  if (hasConflict) return 'human-conflict'
+  if (isHighImpact(candidate)) return 'human-high-impact'
+  if (mode === 'strict') return 'human-user-choice'
+  if (mode === 'trusting') return 'auto-confidence'
+  return score < LOW_CONFIDENCE ? 'human-low-confidence' : 'auto-confidence'
 }
 
 /** 理由是否指向"直接入库"。 */
 export function isAutoAccept(reason: GateReason): boolean {
-  return reason.startsWith('自动入库')
+  return reason.startsWith('auto-')
+}
+
+/**
+ * 判据的中文说法，用于 host 侧产出的文本（导出的 Markdown、给模型看的召回结果）。
+ * 浏览器侧不用这张表——面板走自己的词典，跟随界面语言。
+ */
+export const GATE_REASON_LABELS: Readonly<Record<GateReason, string>> = {
+  'auto-confidence': '自动入库·置信达标',
+  'auto-multi-source': '自动入库·多源印证',
+  'human-ai-inferred': '待确认·AI 推断',
+  'human-high-impact': '待确认·高影响',
+  'human-conflict': '待确认·与已有记忆冲突',
+  'human-low-confidence': '待确认·置信不足',
+  'human-user-choice': '待确认·你选择了逐条确认',
 }
 
 /**
@@ -277,7 +291,7 @@ export function gate(candidates: readonly Candidate[], options: GateOptions = {}
         item.sources.push(...sources)
         item.confidence = confidence(candidate.source.source, item.sources.length, byLlm)
         // 多源印证过的条目，理由要如实升级——用户看到的是"两处都说过"，不是原来那句。
-        if (isAutoAccept(item.gateReason)) item.gateReason = '自动入库·多源印证'
+        if (isAutoAccept(item.gateReason)) item.gateReason = 'auto-multi-source'
         result.merged++
         mergedIntoExisting = true
         break

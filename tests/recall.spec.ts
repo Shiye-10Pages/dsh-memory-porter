@@ -22,7 +22,7 @@ function item(id: string, claim: string, evidence: string, overrides: Partial<Me
     reviewDate: '2026-08-30',
     links: [],
     contentHash: id,
-    gateReason: '自动入库·置信达标',
+    gateReason: 'auto-confidence',
     ...overrides,
   }
 }

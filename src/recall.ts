@@ -8,6 +8,7 @@
  * 中文没有词边界，所以切分用**字符二元组**：与 gate.ts 的判同主题同一套思路，
  * 对中文稳、零依赖、不需要词典。
  */
+import { GATE_REASON_LABELS } from './gate.ts'
 import type { MemoryItem } from './types.ts'
 
 /** BM25 参数，用通行默认值。 */
@@ -127,7 +128,7 @@ export function formatHits(hits: readonly { item: MemoryItem; score: number }[])
     if (item.context !== undefined) lines.push(`情境: ${item.context}`)
     lines.push(`结论: ${item.claim}`)
     lines.push(`证据(逐字): ${item.evidence}`)
-    lines.push(`入库依据: ${item.gateReason}`)
+    lines.push(`入库依据: ${GATE_REASON_LABELS[item.gateReason] ?? item.gateReason}`)
     return lines.join('\n')
   }).join('\n\n')
 }

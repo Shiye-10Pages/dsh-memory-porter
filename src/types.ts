@@ -116,22 +116,27 @@ export interface MemoryItem {
   gateReason: GateReason
 }
 
-/** 过闸判据。前两个是自动入库，其余都要人看。 */
+/**
+ * 过闸判据。`auto-` 前缀是自动入库，`human-` 前缀要人看。
+ *
+ * **刻意用稳定的机器键而不是中文字面量**：它既要落进 JSONL 长期存着，
+ * 又要在中英两种界面里显示。存键、渲染时再翻译，换语言不用迁移数据。
+ */
 export type GateReason =
   /** 置信度达标，直接入库 */
-  | '自动入库·置信达标'
+  | 'auto-confidence'
   /** 与已有记忆同结论，已并源 */
-  | '自动入库·多源印证'
+  | 'auto-multi-source'
   /** 来源是 AI 推断（Claude 云端记忆），按契约绝不自动入库 */
-  | '待确认·AI 推断'
+  | 'human-ai-inferred'
   /** 动到了资源 / 方向 / 收入 */
-  | '待确认·高影响'
+  | 'human-high-impact'
   /** 与库里已有结论同主题但不同，谁对由你判 */
-  | '待确认·与已有记忆冲突'
+  | 'human-conflict'
   /** 置信度低于阈值 */
-  | '待确认·置信不足'
+  | 'human-low-confidence'
   /** 用户把档位调到了"全部人工确认" */
-  | '待确认·你选择了逐条确认'
+  | 'human-user-choice'
 
 /**
  * 宿主 LLM 服务的切面（对应 @deepseek-ai/dsh-llm 的 `ctx.llm`）。
